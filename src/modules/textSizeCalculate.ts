@@ -226,7 +226,7 @@ let getTxtHeight = (txt: string, inputOptions: textOptions = {}) => {
 };
 let calculateMaxFont = (txt: string, inputOptions: textOptions = {}): number => {
   const options = { ...def, ...inputOptions };
-  while (getTxtHeight(txt, options) > options.height) --options.size;
+  while (getTxtHeight(txt, options) > options.height) options.size -= 0.5;
   return options.size;
 };
 

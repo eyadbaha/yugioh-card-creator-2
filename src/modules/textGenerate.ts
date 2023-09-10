@@ -22,17 +22,16 @@ const createTextLineBuffer = (text: string, options: generateOptions): Buffer =>
       : `x="0" y="${Math.ceil(options.size as number)}"`;
   const background = options.background ? `<rect width="100%" height="100%" fill="${options.background}" />` : "";
   var svgString = `
-    <svg width="${Math.ceil(options.width as number)}" height="${Math.ceil(options.size as number) + 20}">    
+    <svg width="${Math.ceil(options.width as number)}" height="${Math.ceil(options.height as number) + 20}">    
     <g>
         ${background}
             <text ${position} fill="${options.color}" letter-spacing="${options.letterSpacing}" opacity="${
     options.opacity
   }" font-weight="${options.weight}" stroke-width="${options.stroke}" stroke="${options.color}" transform="scale(${
     options.scaleX
-  }, ${options.scaleY})" font-family="${options.fontFamily}" font-size="${options.size}px">${escape(text)}</text>
+  }, ${options.scaleY})" font-family="${options.fontFamily}" font-size="${options.size}px">${text}</text>
         </g>
     </svg>`;
-  console.log(svgString);
   return Buffer.from(svgString);
 };
 const escape = (s: string | number): string | number => {
@@ -50,6 +49,7 @@ const escape = (s: string | number): string | number => {
 };
 const textGenerate = async (text: string, inputOptions: generateOptions): Promise<Buffer> => {
   if (inputOptions.allCaps) text = text.toUpperCase();
+  text = `${escape(text)}`;
   let scaleX = inputOptions.scaleX || 1,
     scaleY = inputOptions.scaleY,
     width = Math.ceil(getTxtWidth(text, inputOptions));
@@ -68,7 +68,7 @@ const textGenerate = async (text: string, inputOptions: generateOptions): Promis
     )
       .resize({
         width: inputOptions.width,
-        height: inputOptions.size + 20,
+        height: inputOptions.height + 20,
         fit: "contain",
         position: inputOptions.align || "left",
         background: { r: 0, g: 0, b: 0, alpha: 0 },
@@ -76,36 +76,26 @@ const textGenerate = async (text: string, inputOptions: generateOptions): Promis
       .toBuffer();
     return output;
   }
-  const bufferArray: Buffer[] = [];
+  let textBuffer = "";
+  let dy = "0";
   const options = { ...inputOptions, size: calculateMaxFont(text, inputOptions) };
   text.split(/\n/).map((line) => {
     let lineString = "";
     line.split(" ").forEach((word) => {
       if (getTxtWidth(lineString + `${word} `, options) > options.width) {
-        bufferArray.push(createTextLineBuffer(lineString, options));
+        textBuffer += `<tspan x="0" dy="${dy}">${lineString}</tspan>`;
+        dy = "1em";
         lineString = "";
       }
       lineString += `${word} `;
     });
     if (lineString) {
-      bufferArray.push(createTextLineBuffer(lineString, options));
+      textBuffer += `<tspan x="0" dy="${dy}">${lineString}</tspan>`;
     }
+    dy = "1em";
   });
-  const compositeArray: sharp.OverlayOptions[] = bufferArray.map((input, index) => {
-    return { input: input, top: options.size * index, left: 0 };
-  });
-  const output = await sharp({
-    create: {
-      width: options.width,
-      height: options.height + 20,
-      channels: 4,
-      background: { r: 255, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite(compositeArray)
-    .webp()
-    .resize({ width: options.width, fit: "fill", position: "left", height: options.height + 20 })
-    .toBuffer();
+  const buffer = createTextLineBuffer(textBuffer, options);
+  const output = await sharp(buffer).webp().toBuffer();
   return output;
 };
 export { textGenerate };
