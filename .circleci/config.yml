@@ -12,9 +12,8 @@ jobs:
     steps: #these steps are preformed on the virtual space for prepration
       - node/install
       - checkout
-      - aws-cli/setup
       - run: #start running the deployment process
-          name: Build
+          name: Typescript Compile
           command: |
             npm i typescript && npm run build && npm uninstall typescript
       - run: #start running the deployment process
@@ -22,9 +21,16 @@ jobs:
           command: |
             npm i --omit=dev
       - run:
-          name: Lambda Function Package
+          name: Package into Zip
           command: |
             zip -r deployment-package.zip build node_modules index.js package.json
+  deploy:
+    context: AWS_LAMBDA
+    docker: #docker is a virtual space used for operating the pipeline
+      - image: "cimg/base:stable"
+    steps: #these steps are preformed on the virtual space for prepration
+      - checkout
+      - aws-cli/setup
       - run:
           name: Deploy
           command: |
