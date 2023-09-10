@@ -6,14 +6,15 @@ orbs:
   aws-cli: circleci/aws-cli@2.0.0
 
 jobs:
-  build:
+  build-and-deploy:
     docker: #docker is a virtual space used for operating the pipeline
       - image: "cimg/base:stable"
     steps: #these steps are preformed on the virtual space for prepration
       - node/install
       - checkout
+      - aws-cli/setup
       - run: #start running the deployment process
-          name: Typescript Compile
+          name: Build
           command: |
             npm i typescript && npm run build && npm uninstall typescript
       - run: #start running the deployment process
@@ -21,16 +22,9 @@ jobs:
           command: |
             npm i --omit=dev
       - run:
-          name: Package into Zip
+          name: Lambda Function Package
           command: |
-            zip -r deployment-package.zip build node_modules index.js package.json
-  deploy:
-    context: AWS_LAMBDA
-    docker: #docker is a virtual space used for operating the pipeline
-      - image: "cimg/base:stable"
-    steps: #these steps are preformed on the virtual space for prepration
-      - checkout
-      - aws-cli/setup
+            zip -r deployment-package.zip build node_modules index.mjs package.json
       - run:
           name: Deploy
           command: |
@@ -40,3 +34,10 @@ jobs:
           name: Cleanup
           command: |
             rm deployment-package.zip
+
+workflows:
+  version: 2
+  build-and-deploy:
+    jobs:
+      - build-and-deploy:
+          context: AWS_LAMBDA # this is where you specify the context name for the deploy job

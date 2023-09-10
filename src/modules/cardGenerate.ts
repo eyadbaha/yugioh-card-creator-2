@@ -221,7 +221,7 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
   card.composite(ResolvedOverlayOptions);
   const imgBuffer = await sharp(await card.toBuffer())
     .webp()
-    //.resize(360, 523)
+    .resize(360, 523)
     .toBuffer();
   return imgBuffer;
 };
