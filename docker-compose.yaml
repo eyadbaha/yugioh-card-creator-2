@@ -1,0 +1,29 @@
+version: "1.0"
+services:
+  card-dev:
+    container_name: card-dev
+    build:
+      target: development
+    image: card:dev
+    command: npm run dev
+    cpus: 2
+    mem_limit: 2048m
+    ports:
+      - "5000:8080"
+    volumes:
+      - ./src:/var/task/src
+      - ./assets:/var/task/assets
+    env_file:
+      - .env
+  card-prod:
+    container_name: card-prod
+    build:
+      target: development
+    env_file:
+      - .env
+    image: card:prod
+    command: npm run start
+    cpus: 2
+    mem_limit: 2048m
+    ports:
+      - "5000:8080"

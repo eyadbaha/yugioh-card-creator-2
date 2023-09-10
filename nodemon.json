@@ -1,0 +1,8 @@
+{
+  "watch": ["src", "assets/settings.json"],
+  "ext": "ts",
+  "execMap": {
+    "ts": "ts-node"
+  },
+  "exec": "node --loader ts-node/esm ./src/app.ts"
+}

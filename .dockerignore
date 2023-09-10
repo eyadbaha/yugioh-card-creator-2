@@ -1,0 +1,7 @@
+node_modules
+output
+build
+docker-compose.yaml
+Dockerfile
+.dockerignore
+pics

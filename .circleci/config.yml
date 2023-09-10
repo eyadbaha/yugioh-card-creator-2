@@ -1,0 +1,36 @@
+version: 2.1
+
+# orbs for necessary dependencies
+orbs:
+  node: circleci/node@5.0.1
+  aws-cli: circleci/aws-cli@2.0.0
+
+jobs:
+  build:
+    docker: #docker is a virtual space used for operating the pipeline
+      - image: "cimg/base:stable"
+    steps: #these steps are preformed on the virtual space for prepration
+      - node/install
+      - checkout
+      - aws-cli/setup
+      - run: #start running the deployment process
+          name: Build
+          command: |
+            npm i typescript && npm run build && npm uninstall typescript
+      - run: #start running the deployment process
+          name: Install Packages
+          command: |
+            npm i --omit=dev
+      - run:
+          name: Lambda Function Package
+          command: |
+            zip -r deployment-package.zip build node_modules index.js package.json
+      - run:
+          name: Deploy
+          command: |
+            aws lambda update-function-code --function-name $FUNCTION_NAME --zip-file fileb://deployment-package.zip
+      # Clean up the zip file
+      - run:
+          name: Cleanup
+          command: |
+            rm deployment-package.zip
