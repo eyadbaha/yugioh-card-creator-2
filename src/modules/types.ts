@@ -24,14 +24,20 @@ const generateOptionsSchema = z.object({
   weight: z.number().optional(),
   opacity: z.number().optional(),
   color: z.string().optional(),
-  x: z.number().optional(),
-  y: z.number().optional(),
+  left: z.number().optional(),
+  top: z.number().optional(),
   spacing: z.number().optional(),
   letterSpacing: z.number().optional(),
   align: z.string().optional(),
   background: z.string().optional(),
   allCaps: z.boolean().optional(),
   stroke: z.number().optional(),
+  outline: z
+    .object({
+      width: z.number(),
+      color: z.string(),
+    })
+    .optional(),
 });
 const cardDataSchema = z.object({
   name: z.string(),
@@ -59,14 +65,14 @@ const linkArrowsSchema = z.object({
 });
 const spellIconSchema = z.object({
   text: z.object({
-    x: z.number(),
-    y: z.number(),
+    left: z.number(),
+    top: z.number(),
   }),
   icon: z.object({
     width: z.number(),
     height: z.number(),
-    x: z.number(),
-    y: z.number(),
+    left: z.number(),
+    top: z.number(),
   }),
 });
 const settingsSchema = z.object({
@@ -74,11 +80,11 @@ const settingsSchema = z.object({
   name: generateOptionsSchema,
   attribute: generateOptionsSchema,
   level: generateOptionsSchema,
-  rank: z.object({ x: z.number() }),
+  rank: z.object({ left: z.number() }),
   art: generateOptionsSchema,
   pendulumArt: z.object({
-    x: z.number(),
-    y: z.number(),
+    left: z.number(),
+    top: z.number(),
     width: z.number(),
     height: z.number(),
     height1: z.number(),
@@ -93,23 +99,23 @@ const settingsSchema = z.object({
   pendulumText: generateOptionsSchema,
   stat: generateOptionsSchema.extend({
     atk: z.object({
-      x: z.number(),
-      y: z.number(),
+      left: z.number(),
+      top: z.number(),
     }),
     def: z.object({
-      x: z.number(),
-      y: z.number(),
+      left: z.number(),
+      top: z.number(),
     }),
   }),
   linkRating: generateOptionsSchema,
   scale: generateOptionsSchema.extend({
-    left: z.object({
-      x: z.number(),
-      y: z.number(),
+    leftScale: z.object({
+      left: z.number(),
+      top: z.number(),
     }),
-    right: z.object({
-      x: z.number(),
-      y: z.number(),
+    rightScale: z.object({
+      left: z.number(),
+      top: z.number(),
     }),
   }),
   linkArrows: linkArrowsSchema,

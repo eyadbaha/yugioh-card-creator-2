@@ -4,7 +4,7 @@ import type { APIBody, linkArrows, settings } from "./types";
 import sizeOf from "image-size";
 
 interface OverlayOptionsPromises extends Omit<sharp.OverlayOptions, "input"> {
-  input: Promise<Buffer>;
+  input: Promise<Buffer> | string;
 }
 
 const cardGenerate = async (options: APIBody, importedStyle: settings) => {
@@ -16,38 +16,36 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
   ["link", "xyz", "spell", "trap"].forEach((e) => {
     options.template.includes(e) ? (nameColor = "white") : null;
   });
-  const [card, attribute, name] = [
-    sharp(`${assetsDir}/standard/${importedStyle.styleName}/template/${options.template}.png`),
-    sharp(`${assetsDir}/standard/${importedStyle.styleName}/icons/${options.attribute?.toLocaleLowerCase()}.png`)
-      .resize(importedStyle.attribute.width, importedStyle.attribute.height)
-      .toBuffer(),
-    textGenerate(options.name, { ...importedStyle.name, color: nameColor }),
-  ];
+  const card = sharp(`${assetsDir}/standard/${importedStyle.styleName}/template/${options.template}.png`);
+  //Name, Attribute overlay
   OverlayOptions.unshift(
-    { input: name, top: importedStyle.name.y, left: importedStyle.name.x },
-    { input: attribute, top: importedStyle.attribute.y, left: importedStyle.attribute.x }
+    { input: textGenerate(options.name, { ...importedStyle.name, color: nameColor }), ...importedStyle.name },
+    {
+      input: `${assetsDir}/standard/${importedStyle.styleName}/icons/${options.attribute?.toLocaleLowerCase()}.png`,
+      ...importedStyle.attribute,
+    }
   );
   if (options.template != "spell" && options.template != "trap" && options.monsterType) {
     //Card is a Monster
     if (options.template == "xyz") {
       //Card is an Xyz Monster
-      const lv = sharp(`${assetsDir}/standard/${importedStyle.styleName}/icons/r.png`)
-        .resize(importedStyle.level.width, importedStyle.level.height)
-        .toBuffer();
+      //Rank overlay
       for (let n: number = 0; n < (options.level as number); n++) {
         OverlayOptions.push({
-          input: lv,
+          input: `${assetsDir}/standard/${importedStyle.styleName}/icons/r.png`,
           left:
-            (importedStyle.rank.x as number) +
+            (importedStyle.rank.left as number) +
             (importedStyle.level.width + (importedStyle.level.spacing as number)) * n,
-          top: importedStyle.level.y,
+          top: importedStyle.level.top,
         });
       }
-      const def = textGenerate(options.def as string, importedStyle.stat);
-      OverlayOptions.push({ input: def, top: importedStyle.stat.def.y, left: importedStyle.stat.def.x });
+      //Defence overlay
+      OverlayOptions.push({
+        input: textGenerate(options.def as string, importedStyle.stat),
+        ...importedStyle.stat.def,
+      });
     } else if (options.template == "link") {
       //Card is a Link Monster
-      const linkRating = textGenerate(options.level?.toString() || "0", importedStyle.linkRating);
       const linkArrowPositions: (keyof linkArrows)[] = [
         "Top",
         "Top-Right",
@@ -59,45 +57,43 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
         "Top-Left",
       ];
       const linkArrows = linkArrowPositions.map((value) => {
-        return sharp(`${assetsDir}/standard/${importedStyle.styleName}/icons/${value.toLocaleLowerCase()}.png`)
-          .resize({
-            width: importedStyle.linkArrows[value].width,
-            height: importedStyle.linkArrows[value].height,
-            fit: "fill",
-          })
-          .toBuffer();
+        return `${assetsDir}/standard/${importedStyle.styleName}/icons/${value.toLocaleLowerCase()}.png`;
       });
+      //Overlay Link Arrows
       options.linkArrows?.forEach((value) => {
         for (let i = 0; i < linkArrowPositions.length; i++) {
           if (value == linkArrowPositions[i]) {
             OverlayOptions.unshift({
               input: linkArrows[i],
-              top: importedStyle.linkArrows[linkArrowPositions[i]].y,
-              left: importedStyle.linkArrows[linkArrowPositions[i]].x,
+              ...importedStyle.linkArrows[linkArrowPositions[i]],
             });
             break;
           }
         }
       });
-      OverlayOptions.unshift({ input: linkRating, top: importedStyle.linkRating.y, left: importedStyle.linkRating.x });
+      //Overlay Link Rating text
+      OverlayOptions.unshift({
+        input: textGenerate(options.level?.toString() || "0", importedStyle.linkRating),
+        ...importedStyle.linkRating,
+      });
     } else {
-      const [lv, def] = [
-        sharp(`${assetsDir}/standard/${importedStyle.styleName}/icons/lv.png`)
-          .resize(importedStyle.level.width, importedStyle.level.height)
-          .toBuffer(),
-        textGenerate(options.def as string, importedStyle.stat),
-      ];
+      //Overlay Levels
       for (let n: number = 0; n < (options.level as number); n++) {
         OverlayOptions.push({
-          input: lv,
+          input: `${assetsDir}/standard/${importedStyle.styleName}/icons/lv.png`,
           left:
-            (importedStyle.level.x as number) -
+            (importedStyle.level.left as number) -
             (importedStyle.level.width + (importedStyle.level.spacing as number)) * n,
-          top: importedStyle.level.y,
+          top: importedStyle.level.top,
         });
       }
-      OverlayOptions.push({ input: def, top: importedStyle.stat.def.y, left: importedStyle.stat.def.x });
+      //Overlay Defence
+      OverlayOptions.push({
+        input: textGenerate(options.def as string, importedStyle.stat),
+        ...importedStyle.stat.def,
+      });
     }
+    //Overlay Monster  type text, Attack, Description
     const [monsterType, atk, cardText] = [
       textGenerate(options.monsterType, importedStyle.type),
       textGenerate(options.atk as string, importedStyle.stat),
@@ -111,14 +107,19 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
       }),
     ];
     OverlayOptions.unshift(
-      { input: monsterType, top: importedStyle.type.y, left: importedStyle.type.x },
-      { input: cardText, top: importedStyle.text.y, left: importedStyle.text.x },
-      { input: atk, top: importedStyle.stat.atk.y, left: importedStyle.stat.atk.x }
+      { input: monsterType, top: importedStyle.type.top, left: importedStyle.type.left },
+      { input: cardText, top: importedStyle.text.top, left: importedStyle.text.left },
+      { input: atk, top: importedStyle.stat.atk.top, left: importedStyle.stat.atk.left }
     );
     if (options.pendulum == false || options.template == "link") {
       //Card is not a Pendulum
       const art = sharp(artBuffer).resize(importedStyle.art.width, importedStyle.art.height).toBuffer();
-      OverlayOptions.unshift({ input: art, top: importedStyle.art.y, left: importedStyle.art.x, blend: "dest-over" });
+      OverlayOptions.unshift({
+        input: art,
+        top: importedStyle.art.top,
+        left: importedStyle.art.left,
+        blend: "dest-over",
+      });
     } else {
       //Card is a Pendulum
       const artRatio: number = (artMetaData.height as number) / (artMetaData.width as number);
@@ -148,9 +149,9 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
           position: "top",
         };
       }
-      const [pendulum, pendulumTemplate, scale, art, artMask, pednulumText] = [
-        sharp(`${assetsDir}/standard/${importedStyle.styleName}/template/pendulum.png`).toBuffer(),
-        sharp(`${assetsDir}/standard/${importedStyle.styleName}/template/pendulum-${options.template}.png`).toBuffer(),
+      const [pendulum, pendulumTemplate, scale, art, artMask, pendulumText] = [
+        `${assetsDir}/standard/${importedStyle.styleName}/template/pendulum.png`,
+        `${assetsDir}/standard/${importedStyle.styleName}/template/pendulum-${options.template}.png`,
         textGenerate(options.scale?.toString() || "0", importedStyle.scale),
         sharp(artBuffer).resize(artResizeOptions).toBuffer(),
         sharp({
@@ -166,38 +167,33 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
         textGenerate(options.pendulumText || "", importedStyle.pendulumText),
       ];
       OverlayOptions.unshift(
-        { input: artMask, top: importedStyle.pendulumArt.y, left: importedStyle.pendulumArt.x },
-        { input: art, top: importedStyle.pendulumArt.y, left: importedStyle.pendulumArt.x },
+        { input: artMask, ...importedStyle.pendulumArt },
+        { input: art, ...importedStyle.pendulumArt },
         { input: pendulumTemplate },
         { input: pendulum },
-        { input: pednulumText, top: importedStyle.pendulumText.y, left: importedStyle.pendulumText.x },
-        { input: scale, top: importedStyle.scale.right.y, left: importedStyle.scale.right.x },
-        { input: scale, top: importedStyle.scale.left.y, left: importedStyle.scale.left.x }
+        { input: pendulumText, ...importedStyle.pendulumText },
+        { input: scale, ...importedStyle.scale.rightScale },
+        { input: scale, ...importedStyle.scale.leftScale }
       );
     }
   } else {
     //Card is a Spell/Trap
     if (options.icon == "normal") {
-      const type = sharp(
-        `${assetsDir}/standard/${importedStyle.styleName}/icons/${options.attribute?.toLocaleLowerCase()}-normal.png`
-      ).toBuffer();
+      const type = `${assetsDir}/standard/${
+        importedStyle.styleName
+      }/icons/${options.attribute?.toLocaleLowerCase()}-normal.png`;
       OverlayOptions.unshift({
         input: type,
-        top: importedStyle.spellIcon.text.y,
-        left: importedStyle.spellIcon.text.x,
+        ...importedStyle.spellIcon.text,
       });
     } else {
       const [type, icon] = [
-        sharp(
-          `${assetsDir}/standard/${importedStyle.styleName}/icons/${options.attribute?.toLocaleLowerCase()}-icon.png`
-        ).toBuffer(),
-        sharp(`${assetsDir}/standard/${importedStyle.styleName}/icons/${options.icon?.toLocaleLowerCase()}.png`)
-          .resize(importedStyle.spellIcon.icon.width, importedStyle.spellIcon.icon.height)
-          .toBuffer(),
+        `${assetsDir}/standard/${importedStyle.styleName}/icons/${options.attribute?.toLocaleLowerCase()}-icon.png`,
+        `${assetsDir}/standard/${importedStyle.styleName}/icons/${options.icon?.toLocaleLowerCase()}.png`,
       ];
       OverlayOptions.unshift(
-        { input: type, top: importedStyle.spellIcon.text.y, left: importedStyle.spellIcon.text.x },
-        { input: icon, top: importedStyle.spellIcon.icon.y, left: importedStyle.spellIcon.icon.x }
+        { input: type, ...importedStyle.spellIcon.text },
+        { input: icon, ...importedStyle.spellIcon.icon }
       );
     }
     const [art, cardText] = [
@@ -206,11 +202,11 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
       textGenerate(options.name, importedStyle.name),
     ];
     OverlayOptions.unshift(
-      { input: art, top: importedStyle.art.y, left: importedStyle.art.x, blend: "dest-over" },
-      { input: cardText, top: importedStyle.textSpell.y, left: importedStyle.textSpell.x }
+      { input: art, ...importedStyle.art, blend: "dest-over" },
+      { input: cardText, ...importedStyle.textSpell }
     );
   }
-  const ResolvedOverlayOptionsinput: Buffer[] = await Promise.all(
+  const ResolvedOverlayOptionsinput: (Buffer | string)[] = await Promise.all(
     OverlayOptions.map((option) => {
       return option.input;
     })
@@ -219,10 +215,7 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
     return { ...element, input: ResolvedOverlayOptionsinput[index] };
   });
   card.composite(ResolvedOverlayOptions);
-  const imgBuffer = await sharp(await card.toBuffer())
-    .webp()
-    .resize(360, 523)
-    .toBuffer();
+  const imgBuffer = await card.webp({ quality: 1 }).toBuffer();
   return imgBuffer;
 };
 

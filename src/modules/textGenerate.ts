@@ -21,15 +21,25 @@ const createTextLineBuffer = (text: string, options: generateOptions): Buffer =>
       ? `x="50%" y="${Math.ceil(options.size as number)}" dominant-baseline="middle" text-anchor="middle"`
       : `x="0" y="${Math.ceil(options.size as number)}"`;
   const background = options.background ? `<rect width="100%" height="100%" fill="${options.background}" />` : "";
+  const outline = options.outline
+    ? `${background}
+       <text ${position} fill="${options.outline.color}" letter-spacing="${options.letterSpacing}" opacity="${
+        options.opacity
+      }" font-weight="${options.weight}" stroke-width="${options.outline.width + (options.stroke || 0)}" stroke="${
+        options.outline.color
+      }" transform="scale(${options.scaleX}, ${options.scaleY})" font-family="${options.fontFamily}" font-size="${
+        options.size
+      }px">${text}</text>`
+    : "";
   var svgString = `
     <svg width="${Math.ceil(options.width as number)}" height="${Math.ceil(options.height as number) + 20}">    
     <g>
-        ${background}
-            <text ${position} fill="${options.color}" letter-spacing="${options.letterSpacing}" opacity="${
+       ${outline}<text ${position} fill="${options.color}" letter-spacing="${options.letterSpacing}" opacity="${
     options.opacity
   }" font-weight="${options.weight}" stroke-width="${options.stroke}" stroke="${options.color}" transform="scale(${
     options.scaleX
   }, ${options.scaleY})" font-family="${options.fontFamily}" font-size="${options.size}px">${text}</text>
+       
         </g>
     </svg>`;
   return Buffer.from(svgString);
