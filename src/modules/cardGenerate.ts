@@ -2,6 +2,8 @@ import { textGenerate } from "./textGenerate.js";
 import sharp from "sharp";
 import type { APIBody, linkArrows, settings } from "./types";
 import sizeOf from "image-size";
+import { z } from "zod";
+import axios from "axios";
 
 interface OverlayOptionsPromises extends Omit<sharp.OverlayOptions, "input"> {
   input: Promise<Buffer> | string;
@@ -9,7 +11,12 @@ interface OverlayOptionsPromises extends Omit<sharp.OverlayOptions, "input"> {
 
 const cardGenerate = async (options: APIBody, importedStyle: settings) => {
   const assetsDir = process.env.ASSETS_DIR || `./assets`;
-  const artBuffer = Buffer.from(options.art, "base64");
+  let artBuffer: Buffer = Buffer.from("");
+  if (z.string().url().safeParse(options.art).success) {
+    artBuffer = (await axios({ url: options.art, responseType: "arraybuffer" })).data as Buffer;
+  } else {
+    artBuffer = Buffer.from(options.art, "base64");
+  }
   const artMetaData = sizeOf(artBuffer);
   const OverlayOptions: OverlayOptionsPromises[] = [];
   let nameColor = importedStyle.name.color;
