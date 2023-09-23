@@ -11,6 +11,9 @@ type textOptions = {
 };
 
 import { init } from "server-text-width";
+import * as fontkit from "fontkit";
+import fs from "fs";
+import { getFontMetrics } from "./initiateFontsMetrics.js";
 const def = {
   fontFamily: "MatrixBold",
   size: 20,
@@ -195,13 +198,32 @@ const TEXT_WIDTH_LOOKUP_TABLE = {
       "GNF8GNIrGNNtGNF8GNF8GNF8GNF8GNF8OEHJIMGgIMNiSPGgIMTVZlJLJLGgIMTeaGJLJLKSSTTeaGJLJLTeaGJLJLRUQpQQQpRUQpQQQpRUQpQQQpKSORKSORM+JAM+JAa+ksZ8aRa+ksZ8aRf4icXuX8f4icXuX8PtX8XuX8PtX8XuX8QORuRRRuQORuRRRuWvdGTOTOSXZzTOTOQOaGUyUyNiTlJLJLKzTMTFTMQOTlJLJLKSSTVYVYNiSPTVZlTVZlJLJLSoSXSoSXSoSXSoSXNtNtAA",
   },
 };
-let getTxtWidth = (txt: string, inputOptions: textOptions = {}): number => {
+let getTxtWidth = (text: string, inputOptions: textOptions = {}): number => {
   const options = { ...def, ...inputOptions };
   const { getTextWidth } = init(
     TEXT_WIDTH_LOOKUP_TABLE[options.fontFamily as keyof object] || TEXT_WIDTH_LOOKUP_TABLE["Stone Serif ITC TT"]
   );
-  const width = getTextWidth(txt) * 1.005;
-  return (width * options.size + txt.length * options.letterSpacing) * options.scaleX;
+
+  const width = getTextWidth(text) * 1.005;
+  // if (inputOptions.fontFamily == "MatrixRegularSmallCaps") {
+  //   (async () => {
+  //     const start = Date.now();
+  //     getFontMetrics();
+  //     const fontInstance = fontkit.openSync(`${process.env.ASSETS_DIR || "./assets"}/fonts/MatrixRegularSmallCaps.ttf`);
+  //     const fontSize = options.size;
+  //     const glyph = fontInstance.layout(text);
+  //     const neoWidth = (glyph.advanceWidth / fontInstance.unitsPerEm) * fontSize + text.length * options.letterSpacing;
+  //     const end = Date.now();
+  //     console.log(end - start);
+  //     console.log(`
+  //     Normal:${width * options.size + text.length * options.letterSpacing}
+  //     Opentype:${neoWidth}
+  //     text:${text}
+  //     Size:${options.size}
+  //     `);
+  //   })();
+  // }
+  return (width * options.size + text.length * options.letterSpacing) * options.scaleX;
 };
 
 let getTxtHeight = (txt: string, inputOptions: textOptions = {}) => {
