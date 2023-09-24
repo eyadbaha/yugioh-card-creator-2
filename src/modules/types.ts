@@ -31,6 +31,7 @@ const generateOptionsSchema = z.object({
   align: z.string().optional(),
   background: z.string().optional(),
   allCaps: z.boolean().optional(),
+  smallCaps: z.boolean().optional(),
   stroke: z.number().optional(),
   outline: z
     .object({

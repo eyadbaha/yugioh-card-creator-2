@@ -1,6 +1,12 @@
 import sharp from "sharp";
 import { calculateMaxFont, getTxtWidth } from "./textSizeCalculate.js";
 import type { generateOptions } from "./types";
+function smallCapsConvert(inputText, fontSize = 12) {
+  return inputText.replace(/[a-zà-ÿ]+/g, (match) => {
+    return `<tspan font-size="${fontSize * 0.8}" stroke-width="${fontSize * 0.01}">${match.toUpperCase()}</tspan>`;
+  });
+}
+
 const createTextLineBuffer = (text: string, options: generateOptions): Buffer => {
   const defaultOptions = {
     color: "black",
@@ -16,6 +22,9 @@ const createTextLineBuffer = (text: string, options: generateOptions): Buffer =>
     stroke: 0,
   };
   options = { ...defaultOptions, ...options };
+  if (options.smallCaps) {
+    text = smallCapsConvert(text, options.size);
+  }
   const position =
     options.align == "center"
       ? `x="50%" y="${Math.ceil(options.size as number)}" dominant-baseline="middle" text-anchor="middle"`
