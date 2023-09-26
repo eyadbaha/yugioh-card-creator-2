@@ -3,7 +3,7 @@ import { calculateMaxFont, getTxtWidth } from "./textSizeCalculate.js";
 import type { generateOptions } from "./types";
 function smallCapsConvert(inputText, fontSize = 12) {
   return inputText.replace(/[a-zà-ÿ]+/g, (match) => {
-    return `<tspan font-size="${fontSize * 0.8}" stroke-width="${fontSize * 0.01}">${match.toUpperCase()}</tspan>`;
+    return `<tspan font-size="${fontSize * 0.8}" stroke-width="${fontSize * 0.005}">${match.toUpperCase()}</tspan>`;
   });
 }
 
@@ -70,7 +70,7 @@ const textGenerate = async (text: string, inputOptions: generateOptions): Promis
   if (inputOptions.allCaps) text = text.toUpperCase();
   text = `${escape(text)}`;
   let scaleX = inputOptions.scaleX || 1,
-    scaleY = inputOptions.scaleY,
+    scaleY = inputOptions.scaleY || 1,
     width = Math.ceil(getTxtWidth(text, inputOptions));
   if (inputOptions.fit === "container") {
     if (width > inputOptions.width) {
@@ -79,6 +79,7 @@ const textGenerate = async (text: string, inputOptions: generateOptions): Promis
     } else {
       width = width / scaleX;
     }
+    width += +(inputOptions.outline?.width || 0);
     const buffer = createTextLineBuffer(text, { ...inputOptions, width: width, scaleX: 1, scaleY: scaleY as number });
     const output = await sharp(
       await sharp(buffer)
@@ -114,7 +115,6 @@ const textGenerate = async (text: string, inputOptions: generateOptions): Promis
     dy = "1em";
   });
   const buffer = createTextLineBuffer(textBuffer, options);
-  const output = await sharp(buffer).webp().toBuffer();
-  return output;
+  return buffer;
 };
 export { textGenerate };

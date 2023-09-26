@@ -80,7 +80,9 @@ const settingsSchema = z.object({
   styleName: z.string(),
   name: generateOptionsSchema,
   attribute: generateOptionsSchema,
-  level: generateOptionsSchema,
+  level: generateOptionsSchema.extend({
+    levelString: generateOptionsSchema,
+  }),
   rank: z.object({ left: z.number() }),
   art: generateOptionsSchema,
   pendulumArt: z.object({
@@ -107,7 +109,13 @@ const settingsSchema = z.object({
       left: z.number(),
       top: z.number(),
     }),
+    maxAtk: z.object({
+      left: z.number(),
+      top: z.number(),
+    }),
   }),
+  statSection: generateOptionsSchema,
+  maxSection: generateOptionsSchema,
   linkRating: generateOptionsSchema,
   scale: generateOptionsSchema.extend({
     leftScale: z.object({
@@ -140,7 +148,8 @@ const APIBodySchema = z.object({
   text: settingsSchema.optional(),
   linkArrows: z.array(z.enum(linkArrowsEnum)).max(8).optional(),
   icon: z.string().optional(),
-  pendulum: z.boolean(),
+  pendulum: z.boolean().default(false),
+  maxAtk: z.string().optional(),
 });
 
 type cardData = z.infer<typeof cardDataSchema>;
