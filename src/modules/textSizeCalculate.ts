@@ -8,6 +8,7 @@ type textOptions = {
   scaleX?: number;
   scaleY?: number;
   scale?: number;
+  smallCaps?: boolean;
 };
 
 import { init } from "server-text-width";
@@ -198,14 +199,34 @@ const TEXT_WIDTH_LOOKUP_TABLE = {
     "MergedFont|1.05px|600|0":
       "AYAYAYAYAYAYAYAYAYASASASASASAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYASASAXAlAlA7AsAOAWAWAZAmASAWASASAlAlAlAlAlAlAlAlAlAlASASAmAmAmAlBDAsAsAwAwAsAoAzAwASAhAsAlA3AwAzAsAzAwAsAoAwAsA+AsAsAoASASASAfAlAWAlAlAhAlAlASAlAlAOAOAhAOA3AlAlAlAlAWAhASAlAhAwAhAhAhAWARAWAmAhAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYAYASAWAlAlAlAlAVAlAWAxAYAlAmAAAxAWAaAmAWAWAWAlAjASAWAWAYAlA3A3A3AoAsAsAsAsAsAsBCAwAsAsAsAsASASASASAwAwAzAzAzAzAzAkAzAwAwAwAwAsAsAoAlAlAlAlAlAlA7AhAlAlAlAlASASASASAlAlAlAlAlAlAlAkAoAlAlAlAlAhAlAhAwBCAwAhAwAhAwAdAwAdAwAdAwAdAwAwAwAlAsBCAsAdAsAdAsAdAsBCAzAhAzAhAzAhAzAhAzAlAzAlAZASAZBCAZASAZASAZASA2AkAhAWAzAlAlAsASAsASAsAfAsAaAsASAwBCAwAlAwBCAwAzAlAzBCAzAhAzAhBCA+AwAdAwAdAwAdAlAZAlAZAlAZAsAhAsAWAsAiAsAWAwAlAwBCAwAlAwAlAwAlAwAlBCAwAwAhAsAsAdAsAdAsAdASAlAyAsAlAsAlAwAwAdAwA2AsAlAiAsAxAjAoAlAzAwA0AUAZAzAlASAgA+AwAlAzAzAkBGAzAuAlAoAlAZArAiAWAsAWAsA0AnA1ArA0AhAsAdAmAmAeAeAhAhAZAWAnAOAVASAWBcBNBCBNBCAoBRBGA7AwBCAZBCAzBCAwBCAwBCAwBCAwBCAwBCAdAwAhAwAhBCAwAzAhAzAhAzAlAzAhAzAhAmAeAWBcBNBCAzAhBAAqAwBCAwAhBCAwAzAhAwAhAwAhAsAdAsAdAZASAZASAzAhAzAhAwAdAwAdAwAlAwAlAlAZAsAWAkAYAzAlAwAlAtAhAsAdAwAhAsAdAzAhAzAhAzAhAzAhAwAhASAlAYAWA2A2AwAwAhAsAsAZAdAjAfAsAwAvAsAdAhAWA2AlAwAdAwAh",
   },
+  "FOT-Chiaro Std": {
+    "FOT-Chiaro Std |1px|600|0":
+      "ATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATATAYAYAnAnBAAyATAYAYAgAnATAZATAYAnAnAnAnAnAnAnAnAnAnATATAnAnAnAnA2AtApAxAzAlAiAzAvATAYAqAlA6AwA4AoA4ArApAoAuAoA6AnAjApAYAYAYAnAgAYAiAmAiAmAkAXAmAkAQARAgAQA0AkAmAmAmAaAgAYAkAdAtAcAfAgAYATAYAgAgBABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAATAXAmAuAlAnATBABAAzAWApAgAAAzAgBABAAXAXBAAkBAAXAgAXAWApArArArApAtAtAtAtAtAtA5AxAlAlAlAlATATATATAzAwA4A4A4A4A4BAA4AuAuAuAuAjAoApAiAiAiAiAiAiA1AiAkAkAkAkAQAQAQAQApAkAmAmAmAmAmBAAmAkAkAkAkAfAmAfAtAiAtAiAtAiAxAiAxAiAxAiAxAiAzAmAuAjAlAkAlAkAlAkAlAkAlAkAzAmAzAmAzAmAzAmAvAkAxAjATAQATAQATAQATAQATAQA0AjAYARAqAgAjAlAQAlAQAlAQAqAZAlAQAwAkAwAkAwAkAuAxAjA4AmA4AmA4AmA5A5ArAaArAaArAaApAgApAgApAgApAgAoAYAoAYAqAVAuAkAuAkAuAkAuAkAuAkAuAkA6AtAjAfAjApAgApAgApAgAR",
+  },
 };
-let getTxtWidth = (txt: string, inputOptions: textOptions = {}): number => {
+let getRawWidth = (txt: string, inputOptions: textOptions = {}): number => {
   const options = { ...def, ...inputOptions };
   const { getTextWidth } = init(
     TEXT_WIDTH_LOOKUP_TABLE[options.fontFamily as keyof object] || TEXT_WIDTH_LOOKUP_TABLE["Stone Serif ITC TT"]
   );
   const width = getTextWidth(txt) * 1.005;
   return (width * options.size + txt.length * options.letterSpacing) * options.scaleX;
+};
+let getTxtWidth = (txt: string, inputOptions: textOptions = {}): number => {
+  const options = { ...def, ...inputOptions };
+  if (options.smallCaps) {
+    const smallCharacters = txt
+      .match(/[a-zà-ÿ]+/g)
+      .join("")
+      .toUpperCase();
+    const others = txt.replace(/[a-zà-ÿ]+/g, "");
+    return (
+      getRawWidth(others, inputOptions) +
+      getRawWidth(smallCharacters, { ...inputOptions, size: (inputOptions.size || 0) * 0.8 })
+    );
+  } else {
+    return getRawWidth(txt, inputOptions);
+  }
 };
 
 let getTxtHeight = (txt: string, inputOptions: textOptions = {}) => {

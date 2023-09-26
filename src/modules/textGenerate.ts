@@ -1,9 +1,11 @@
 import sharp from "sharp";
 import { calculateMaxFont, getTxtWidth } from "./textSizeCalculate.js";
 import type { generateOptions } from "./types";
-function smallCapsConvert(inputText, fontSize = 12) {
+function smallCapsConvert(inputText, options: generateOptions) {
   return inputText.replace(/[a-zà-ÿ]+/g, (match) => {
-    return `<tspan font-size="${fontSize * 0.8}" stroke-width="${fontSize * 0.005}">${match.toUpperCase()}</tspan>`;
+    return `<tspan font-size="${options.size * 0.8}" stroke-width="${options.stroke || 0}" letter-spacing="${
+      options.letterSpacing || 0
+    }">${match.toUpperCase()}</tspan>`;
   });
 }
 
@@ -23,7 +25,7 @@ const createTextLineBuffer = (text: string, options: generateOptions): Buffer =>
   };
   options = { ...defaultOptions, ...options };
   if (options.smallCaps) {
-    text = smallCapsConvert(text, options.size);
+    text = smallCapsConvert(text, options);
   }
   const position =
     options.align == "center"
@@ -67,6 +69,7 @@ const escape = (s: string | number): string | number => {
   return s;
 };
 const textGenerate = async (text: string, inputOptions: generateOptions): Promise<Buffer> => {
+  text = text.replace(/([^ ])(\/)([^ ])/g, "$1 / $3").replace(/^(\[[^\]]+\])([^\s])/gm, "$1 $2");
   if (inputOptions.allCaps) text = text.toUpperCase();
   text = `${escape(text)}`;
   let scaleX = inputOptions.scaleX || 1,
