@@ -215,10 +215,11 @@ let getRawWidth = (txt: string, inputOptions: textOptions = {}): number => {
 let getTxtWidth = (txt: string, inputOptions: textOptions = {}): number => {
   const options = { ...def, ...inputOptions };
   if (options.smallCaps) {
-    const smallCharacters = txt
-      .match(/[a-zà-ÿ]+/g)
-      .join("")
-      .toUpperCase();
+    const smallCharacters =
+      txt
+        .match(/[a-zà-ÿ]+/g)
+        ?.join("")
+        .toUpperCase() || "";
     const others = txt.replace(/[a-zà-ÿ]+/g, "");
     return (
       getRawWidth(others, inputOptions) +

@@ -1,8 +1,9 @@
 import { textGenerate } from "./textGenerate.js";
 import sharp from "sharp";
-import type { APIBody, linkArrows, settings } from "./types.js";
+import type { APIBody, settings } from "./types.js";
 import { z } from "zod";
 import axios from "axios";
+import { getTxtWidth } from "./textSizeCalculate.js";
 
 interface OverlayOptionsPromises extends Omit<sharp.OverlayOptions, "input"> {
   input: Promise<Buffer> | string;
@@ -36,11 +37,6 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
       }),
       top: importedStyle.text.top,
       left: importedStyle.text.left,
-    },
-    {
-      input: textGenerate(options.monsterType, importedStyle.type),
-      top: importedStyle.type.top,
-      left: importedStyle.type.left,
     }
   );
   if (options.template != "spell" && options.template != "trap" && options.monsterType) {
@@ -57,6 +53,11 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
       {
         input: textGenerate(`${options.level || "0"}`, importedStyle.level.levelString),
         ...importedStyle.level.levelString,
+      },
+      {
+        input: textGenerate(options.monsterType, importedStyle.type),
+        top: importedStyle.type.top,
+        left: importedStyle.type.left,
       }
     );
     if (options.maxAtk) {
@@ -80,6 +81,43 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
         ...importedStyle.stat.def,
       }
     );
+  } else {
+    //Card is Spell/Trap
+    if (["/equip]", "/field]"].some((e) => options.monsterType?.toLocaleLowerCase().endsWith(e))) {
+      const type = options.monsterType.replace(/([^]]*)\]/, "$1");
+      const width = getTxtWidth(type, importedStyle.type);
+      const icon = options.monsterType?.toLocaleLowerCase().match(/\/([^/]+)\]$/)?.[1];
+      const iconPosition = {
+        top: importedStyle.type.top,
+        left: Math.ceil(importedStyle.type.left + width + importedStyle.type.size * 0.1),
+      };
+      const lastPosition = {
+        top: importedStyle.type.top,
+        left: Math.ceil(iconPosition.left + importedStyle.spellIcon.icon.width + importedStyle.type.size * 0.1),
+      };
+      OverlayOptions.unshift(
+        {
+          input: textGenerate(type, importedStyle.type),
+          top: importedStyle.type.top,
+          left: importedStyle.type.left,
+        },
+        {
+          input: `${assetsDir}/rush/${importedStyle.styleName}/icons/${icon}.png`,
+          ...iconPosition,
+        },
+        {
+          input: textGenerate("]", importedStyle.type),
+          ...lastPosition,
+        }
+      );
+      console.log(iconPosition, lastPosition);
+    } else {
+      OverlayOptions.unshift({
+        input: textGenerate(options.monsterType, importedStyle.type),
+        top: importedStyle.type.top,
+        left: importedStyle.type.left,
+      });
+    }
   } //Overlay Art
   const art = sharp(artBuffer).resize(importedStyle.art.width, importedStyle.art.height).toBuffer();
   OverlayOptions.unshift({
