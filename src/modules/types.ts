@@ -129,6 +129,7 @@ const settingsSchema = z.object({
   }),
   linkArrows: linkArrowsSchema,
   spellIcon: spellIconSchema,
+  legend: generateOptionsSchema,
 });
 const settingsMapSchema = z.map(z.string(), settingsSchema);
 const APIBodySchema = z.object({
@@ -150,13 +151,13 @@ const APIBodySchema = z.object({
   icon: z.string().optional(),
   pendulum: z.boolean().default(false),
   maxAtk: z.string().optional(),
+  legend: z.boolean().optional(),
 });
 
 type cardData = z.infer<typeof cardDataSchema>;
 type APIBody = z.infer<typeof APIBodySchema>;
 type generateOptions = z.infer<typeof generateOptionsSchema>;
 type linkArrows = z.infer<typeof linkArrowsSchema>;
-type spellIcon = z.infer<typeof linkArrowsSchema>;
 type settingsMap = z.infer<typeof settingsMapSchema>;
 type settings = z.infer<typeof settingsSchema>;
 export { cardData, APIBody, generateOptions, settingsMap, settings, linkArrows, APIBodySchema };

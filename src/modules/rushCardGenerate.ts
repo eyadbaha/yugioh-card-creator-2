@@ -8,7 +8,6 @@ import { getTxtWidth } from "./textSizeCalculate.js";
 interface OverlayOptionsPromises extends Omit<sharp.OverlayOptions, "input"> {
   input: Promise<Buffer> | string;
 }
-
 const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
   const assetsDir = process.env.ASSETS_DIR || `./assets`;
   let artBuffer: Buffer = Buffer.from("");
@@ -39,6 +38,12 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
       left: importedStyle.text.left,
     }
   );
+  if (options.legend) {
+    OverlayOptions.unshift({
+      input: `${assetsDir}/rush/${importedStyle.styleName}/icons/legend.png`,
+      ...importedStyle.legend,
+    });
+  }
   if (options.template != "spell" && options.template != "trap" && options.monsterType) {
     //Card is a Monster
 
