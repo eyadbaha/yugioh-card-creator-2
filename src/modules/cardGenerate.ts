@@ -222,7 +222,7 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
     return { ...element, input: ResolvedOverlayOptionsinput[index] };
   });
   card.composite(ResolvedOverlayOptions);
-  const imgBuffer = await card.webp({ quality: 1 }).toBuffer();
+  const imgBuffer = await card.webp({ quality: 100 }).toBuffer();
   return imgBuffer;
 };
 
