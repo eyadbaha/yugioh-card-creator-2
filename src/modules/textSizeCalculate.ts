@@ -23,8 +23,7 @@ const def = {
   scaleY: 1,
   letterSpacing: 0,
 };
-
-let getTxtWidth = (text: string, inputOptions: textOptions = {}): number => {
+const calcWidth = (text: string, inputOptions: textOptions = {}): number => {
   const options = { ...def, ...inputOptions };
   const fontInstance = global.fontMetrics[options.fontFamily];
   const fontSize = options.size;
@@ -34,6 +33,22 @@ let getTxtWidth = (text: string, inputOptions: textOptions = {}): number => {
     1.005 *
     options.scaleX;
   return neoWidth;
+};
+
+let getTxtWidth = (text: string, inputOptions: textOptions = {}): number => {
+  if (inputOptions.smallCaps) {
+    const smallCaps =
+      text
+        .match(/[a-zà-ÿ]/g)
+        ?.join("")
+        ?.toUpperCase() || "";
+    const nonSmallCaps = text.replace(/[a-zà-ÿ]/g, "") || "";
+    return (
+      calcWidth(smallCaps, { ...inputOptions, size: inputOptions.size * 0.8 || def.size }) +
+      calcWidth(nonSmallCaps, inputOptions)
+    );
+  }
+  return calcWidth(text, inputOptions);
 };
 let getTxtHeight = (txt: string, inputOptions: textOptions = {}) => {
   const options = { ...def, ...inputOptions };

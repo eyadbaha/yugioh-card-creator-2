@@ -94,7 +94,7 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
       const icon = options.monsterType?.toLocaleLowerCase().match(/\/([^/]+)\]$/)?.[1];
       const iconPosition = {
         top: importedStyle.type.top,
-        left: Math.ceil(importedStyle.type.left + width + importedStyle.type.size * 0.1),
+        left: Math.ceil(importedStyle.type.left + width + importedStyle.spellIcon.icon.width / 2),
       };
       const lastPosition = {
         top: importedStyle.type.top,
@@ -115,7 +115,6 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
           ...lastPosition,
         }
       );
-      console.log(iconPosition, lastPosition);
     } else {
       OverlayOptions.unshift({
         input: textGenerate(options.monsterType, importedStyle.type),
