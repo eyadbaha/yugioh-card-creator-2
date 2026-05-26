@@ -33,6 +33,7 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
             ? importedStyle.text.fontFamilyNormalPendulum
             : importedStyle.text.fontFamilyNormal
           : importedStyle.text.fontFamily,
+        size: options.monsterType.toLocaleLowerCase()?.includes("normal") ? importedStyle.text.sizeNormal || 1 : importedStyle.text.size,
       }),
       top: importedStyle.text.top,
       left: importedStyle.text.left,
@@ -48,10 +49,7 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
     //Card is a Monster
 
     //Overlay Monster  type text, Attack, Description
-    const [monsterType, atk] = [
-      textGenerate(options.monsterType, importedStyle.type),
-      textGenerate(options.atk as string, importedStyle.stat),
-    ];
+    const [monsterType, atk] = [textGenerate(options.monsterType, importedStyle.type), textGenerate(options.atk as string, { ...importedStyle.stat })];
     OverlayOptions.unshift(
       { input: `${assetsDir}/rush/${importedStyle.styleName}/icons/stat.png`, ...importedStyle.statSection },
       { input: `${assetsDir}/rush/${importedStyle.styleName}/icons/lv.png`, ...importedStyle.level },

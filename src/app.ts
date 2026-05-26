@@ -5,7 +5,7 @@ import fs from "fs";
 import { rushCardGenerate } from "./modules/rushCardGenerate.js";
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "5mb" }));
 const port = process.env.PORT || 8080;
 app.get("/", (req, res) => {
   res.send("Main Server:" + port);

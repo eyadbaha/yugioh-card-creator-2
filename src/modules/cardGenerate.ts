@@ -26,7 +26,10 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
   const card = sharp(`${assetsDir}/standard/${importedStyle.styleName}/template/${options.template}.png`);
   //Name, Attribute overlay
   OverlayOptions.unshift(
-    { input: textGenerate(options.name, { ...importedStyle.name, color: nameColor }), ...importedStyle.name },
+    {
+      input: textGenerate(options.name, { ...importedStyle.name, color: nameColor, overrush: options.overrushName }),
+      ...importedStyle.name,
+    },
     {
       input: `${assetsDir}/standard/${importedStyle.styleName}/icons/${options.attribute?.toLocaleLowerCase()}.png`,
       ...importedStyle.attribute,

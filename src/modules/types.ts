@@ -1,17 +1,8 @@
 import z from "zod";
 
-const attributes = ["LIGHT", "DARK", "WIND", "FIRE", "EARTH", "WATER", "DIVINE", "Spell", "Trap", "LAUGH"] as const;
+const attributes = ["LIGHT", "DARK", "WIND", "FIRE", "EARTH", "WATER", "DIVINE", "SPELL", "TRAP", "LAUGH"] as const;
 const templates = ["normal", "effect", "ritual", "fusion", "synchro", "xyz", "link", "spell", "trap", "token"] as const;
-const linkArrowsEnum = [
-  "Top",
-  "Top-Right",
-  "Right",
-  "Bottom-Right",
-  "Bottom",
-  "Bottom-Left",
-  "Left",
-  "Top-Left",
-] as const;
+const linkArrowsEnum = ["Top", "Top-Right", "Right", "Bottom-Right", "Bottom", "Bottom-Left", "Left", "Top-Left"] as const;
 const generateOptionsSchema = z.object({
   width: z.number(),
   height: z.number(),
@@ -39,6 +30,7 @@ const generateOptionsSchema = z.object({
       color: z.string(),
     })
     .optional(),
+  overrush: z.boolean().optional(),
 });
 const cardDataSchema = z.object({
   name: z.string(),
@@ -97,6 +89,7 @@ const settingsSchema = z.object({
   text: generateOptionsSchema.extend({
     fontFamilyNormal: z.string(),
     fontFamilyNormalPendulum: z.string(),
+    sizeNormal: z.number().optional(),
   }),
   textSpell: generateOptionsSchema,
   pendulumText: generateOptionsSchema,
@@ -132,27 +125,28 @@ const settingsSchema = z.object({
   legend: generateOptionsSchema,
 });
 const settingsMapSchema = z.map(z.string(), settingsSchema);
-const APIBodySchema = z.object({
-  name: z.string(),
-  style: z.enum(["duel_links"]),
-  attribute: z.enum(attributes),
-  level: z.number().nonnegative().lt(14).optional(),
-  art: z.string(),
-  template: z.enum(templates).default("token"),
-  monsterType: z.string().optional(),
-  cardText: z.string(),
-  pendulumText: z.string().optional(),
-  scale: z.number().nonnegative().lt(15).optional(),
-  atk: z.string().min(0).max(4).optional(),
-  def: z.string().min(0).max(4).optional(),
-  type: settingsSchema.optional(),
-  text: settingsSchema.optional(),
-  linkArrows: z.array(z.enum(linkArrowsEnum)).max(8).optional(),
-  icon: z.string().optional(),
-  pendulum: z.boolean().default(false),
-  maxAtk: z.string().optional(),
-  legend: z.boolean().optional(),
-});
+const APIBodySchema = z
+  .object({
+    name: z.string(),
+    style: z.enum(["duel_links"]),
+    attribute: z.enum(attributes),
+    level: z.number().nonnegative().lt(14).optional(),
+    art: z.string(),
+    template: z.enum(templates).default("token"),
+    monsterType: z.string().optional(),
+    cardText: z.string(),
+    pendulumText: z.string().optional(),
+    scale: z.number().nonnegative().lt(15).optional(),
+    atk: z.string().min(0).max(4).optional(),
+    def: z.string().min(0).max(4).optional(),
+    linkArrows: z.array(z.enum(linkArrowsEnum)).max(8).optional(),
+    icon: z.string().optional(),
+    pendulum: z.boolean().default(false),
+    maxAtk: z.string().optional(),
+    legend: z.boolean().optional(),
+    overrushName: z.boolean().optional(),
+  })
+  .passthrough();
 
 type cardData = z.infer<typeof cardDataSchema>;
 type APIBody = z.infer<typeof APIBodySchema>;
