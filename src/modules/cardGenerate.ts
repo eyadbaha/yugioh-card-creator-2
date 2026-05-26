@@ -23,7 +23,13 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
   ["link", "xyz", "spell", "trap"].forEach((e) => {
     options.template.includes(e) ? (nameColor = "white") : null;
   });
-  const card = sharp(`${assetsDir}/standard/${importedStyle.styleName}/template/${options.template}.png`);
+  const templatePath = `${assetsDir}/standard/${importedStyle.styleName}/template/${options.template}.png`;
+  const cardSize = options.fullArt
+    ? ((m) => ({ width: m.width as number, height: m.height as number }))(await sharp(templatePath).metadata())
+    : { width: 0, height: 0 };
+  const card = options.fullArt
+    ? sharp(await sharp(artBuffer).resize(cardSize.width, cardSize.height).png().toBuffer())
+    : sharp(templatePath);
   //Name, Attribute overlay
   OverlayOptions.unshift(
     {
@@ -40,7 +46,7 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
     if (options.template == "xyz") {
       //Card is an Xyz Monster
       //Rank overlay
-      for (let n: number = 0; n < (options.level as number); n++) {
+      for (let n: number = 0; n < (options.disableStats ? 0 : (options.level as number)); n++) {
         OverlayOptions.push({
           input: `${assetsDir}/standard/${importedStyle.styleName}/icons/r.png`,
           left:
@@ -88,7 +94,7 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
       });
     } else {
       //Overlay Levels
-      for (let n: number = 0; n < (options.level as number); n++) {
+      for (let n: number = 0; n < (options.disableStats ? 0 : (options.level as number)); n++) {
         OverlayOptions.push({
           input: `${assetsDir}/standard/${importedStyle.styleName}/icons/lv.png`,
           left:
@@ -123,13 +129,15 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
     );
     if (options.pendulum == false || options.template == "link") {
       //Card is not a Pendulum
-      const art = sharp(artBuffer).resize(importedStyle.art.width, importedStyle.art.height).toBuffer();
-      OverlayOptions.unshift({
-        input: art,
-        top: importedStyle.art.top,
-        left: importedStyle.art.left,
-        blend: "dest-over",
-      });
+      if (!options.fullArt) {
+        const art = sharp(artBuffer).resize(importedStyle.art.width, importedStyle.art.height).toBuffer();
+        OverlayOptions.unshift({
+          input: art,
+          top: importedStyle.art.top,
+          left: importedStyle.art.left,
+          blend: "dest-over",
+        });
+      }
     } else {
       //Card is a Pendulum
       const artRatio: number = (artMetaData.height as number) / (artMetaData.width as number);
@@ -206,15 +214,12 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
         { input: icon, ...importedStyle.spellIcon.icon }
       );
     }
-    const [art, cardText] = [
-      sharp(artBuffer).resize(importedStyle.art.width, importedStyle.art.height).toBuffer(),
-      textGenerate(options.cardText, importedStyle.textSpell),
-      textGenerate(options.name, importedStyle.name),
-    ];
-    OverlayOptions.unshift(
-      { input: art, ...importedStyle.art, blend: "dest-over" },
-      { input: cardText, ...importedStyle.textSpell }
-    );
+    const cardText = textGenerate(options.cardText, importedStyle.textSpell);
+    if (!options.fullArt) {
+      const art = sharp(artBuffer).resize(importedStyle.art.width, importedStyle.art.height).toBuffer();
+      OverlayOptions.unshift({ input: art, ...importedStyle.art, blend: "dest-over" });
+    }
+    OverlayOptions.unshift({ input: cardText, ...importedStyle.textSpell });
   }
   const ResolvedOverlayOptionsinput: (Buffer | string)[] = await Promise.all(
     OverlayOptions.map((option) => {

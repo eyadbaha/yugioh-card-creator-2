@@ -145,6 +145,8 @@ const APIBodySchema = z
     maxAtk: z.string().optional(),
     legend: z.boolean().optional(),
     overrushName: z.boolean().optional(),
+    fullArt: z.boolean().optional(),
+    disableStats: z.boolean().optional(),
   })
   .passthrough();
 

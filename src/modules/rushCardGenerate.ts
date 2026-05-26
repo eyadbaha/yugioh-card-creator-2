@@ -17,7 +17,13 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
     artBuffer = Buffer.from(options.art, "base64");
   }
   const OverlayOptions: OverlayOptionsPromises[] = [];
-  const card = sharp(`${assetsDir}/rush/${importedStyle.styleName}/template/${options.template}.png`);
+  const templatePath = `${assetsDir}/rush/${importedStyle.styleName}/template/${options.template}.png`;
+  const cardSize = options.fullArt
+    ? ((m) => ({ width: m.width as number, height: m.height as number }))(await sharp(templatePath).metadata())
+    : { width: 0, height: 0 };
+  const card = options.fullArt
+    ? sharp(await sharp(artBuffer).resize(cardSize.width, cardSize.height).png().toBuffer())
+    : sharp(templatePath);
   //Name, Attribute overlay
   OverlayOptions.unshift(
     { input: textGenerate(options.name, { ...importedStyle.name }), ...importedStyle.name },
@@ -39,7 +45,7 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
       left: importedStyle.text.left,
     }
   );
-  if (options.legend) {
+  if (options.legend && !options.disableStats) {
     OverlayOptions.unshift({
       input: `${assetsDir}/rush/${importedStyle.styleName}/icons/legend.png`,
       ...importedStyle.legend,
@@ -50,40 +56,42 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
 
     //Overlay Monster  type text, Attack, Description
     const [monsterType, atk] = [textGenerate(options.monsterType, importedStyle.type), textGenerate(options.atk as string, { ...importedStyle.stat })];
-    OverlayOptions.unshift(
-      { input: `${assetsDir}/rush/${importedStyle.styleName}/icons/stat.png`, ...importedStyle.statSection },
-      { input: `${assetsDir}/rush/${importedStyle.styleName}/icons/lv.png`, ...importedStyle.level },
-      {
-        input: textGenerate(`${options.level || "0"}`, importedStyle.level.levelString),
-        ...importedStyle.level.levelString,
-      },
-      {
-        input: textGenerate(options.monsterType, importedStyle.type),
-        top: importedStyle.type.top,
-        left: importedStyle.type.left,
-      }
-    );
-    if (options.maxAtk) {
-      //Overlay Maximum Section
+    OverlayOptions.unshift({
+      input: textGenerate(options.monsterType, importedStyle.type),
+      top: importedStyle.type.top,
+      left: importedStyle.type.left,
+    });
+    if (!options.disableStats) {
       OverlayOptions.unshift(
+        { input: `${assetsDir}/rush/${importedStyle.styleName}/icons/stat.png`, ...importedStyle.statSection },
+        { input: `${assetsDir}/rush/${importedStyle.styleName}/icons/lv.png`, ...importedStyle.level },
         {
-          input: `${assetsDir}/rush/${importedStyle.styleName}/icons/max.png`,
-          ...importedStyle.maxSection,
-        },
+          input: textGenerate(`${options.level || "0"}`, importedStyle.level.levelString),
+          ...importedStyle.level.levelString,
+        }
+      );
+      if (options.maxAtk) {
+        //Overlay Maximum Section
+        OverlayOptions.unshift(
+          {
+            input: `${assetsDir}/rush/${importedStyle.styleName}/icons/max.png`,
+            ...importedStyle.maxSection,
+          },
+          {
+            input: textGenerate(options.maxAtk as string, importedStyle.stat),
+            ...importedStyle.stat.maxAtk,
+          }
+        );
+      }
+      //Overlay Defence, Level, Stats Section
+      OverlayOptions.push(
+        { input: atk, top: importedStyle.stat.atk.top, left: importedStyle.stat.atk.left },
         {
-          input: textGenerate(options.maxAtk as string, importedStyle.stat),
-          ...importedStyle.stat.maxAtk,
+          input: textGenerate(options.def as string, importedStyle.stat),
+          ...importedStyle.stat.def,
         }
       );
     }
-    //Overlay Defence, Level, Stats Section
-    OverlayOptions.push(
-      { input: atk, top: importedStyle.stat.atk.top, left: importedStyle.stat.atk.left },
-      {
-        input: textGenerate(options.def as string, importedStyle.stat),
-        ...importedStyle.stat.def,
-      }
-    );
   } else {
     //Card is Spell/Trap
     if (["/equip]", "/field]"].some((e) => options.monsterType?.toLocaleLowerCase().endsWith(e))) {
@@ -121,13 +129,15 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
       });
     }
   } //Overlay Art
-  const art = sharp(artBuffer).resize(importedStyle.art.width, importedStyle.art.height).toBuffer();
-  OverlayOptions.unshift({
-    input: art,
-    top: importedStyle.art.top,
-    left: importedStyle.art.left,
-    blend: "dest-over",
-  });
+  if (!options.fullArt) {
+    const art = sharp(artBuffer).resize(importedStyle.art.width, importedStyle.art.height).toBuffer();
+    OverlayOptions.unshift({
+      input: art,
+      top: importedStyle.art.top,
+      left: importedStyle.art.left,
+      blend: "dest-over",
+    });
+  }
   const ResolvedOverlayOptionsinput: (Buffer | string)[] = await Promise.all(
     OverlayOptions.map((option) => {
       return option.input;
