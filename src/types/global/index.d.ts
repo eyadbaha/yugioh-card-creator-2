@@ -1,5 +1,5 @@
 declare global {
   var assets: any;
+  var fontMetrics: any;
 }
-globalThis.assets = "";
 export {};

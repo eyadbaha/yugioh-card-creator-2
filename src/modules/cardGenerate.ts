@@ -1,7 +1,7 @@
 import { textGenerate } from "./textGenerate.js";
 import sharp from "sharp";
-import type { APIBody, linkArrows, settings } from "./types";
-import sizeOf from "image-size";
+import type { APIBody, linkArrows, settings } from "./types.js";
+import { imageSize as sizeOf } from "image-size";
 import { z } from "zod";
 import axios from "axios";
 
