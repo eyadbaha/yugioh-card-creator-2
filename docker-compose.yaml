@@ -18,7 +18,7 @@ services:
   card-prod:
     container_name: card-prod
     build:
-      target: development
+      target: production
     env_file:
       - .env
     image: card:prod
