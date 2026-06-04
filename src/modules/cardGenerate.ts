@@ -75,8 +75,9 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
       const linkArrows = linkArrowPositions.map((value) => {
         return `${assetsDir}/standard/${importedStyle.styleName}/icons/${value.toLocaleLowerCase()}.png`;
       });
+      const selectedLinkArrows = new Set(options.linkArrows ?? []);
       //Overlay Link Arrows
-      options.linkArrows?.forEach((value) => {
+      selectedLinkArrows.forEach((value) => {
         for (let i = 0; i < linkArrowPositions.length; i++) {
           if (value == linkArrowPositions[i]) {
             OverlayOptions.unshift({
@@ -89,7 +90,7 @@ const cardGenerate = async (options: APIBody, importedStyle: settings) => {
       });
       //Overlay Link Rating text
       OverlayOptions.unshift({
-        input: textGenerate(options.level?.toString() || "0", importedStyle.linkRating),
+        input: textGenerate(selectedLinkArrows.size.toString(), importedStyle.linkRating),
         ...importedStyle.linkRating,
       });
     } else {
