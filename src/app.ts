@@ -6,8 +6,8 @@ import { rushCardGenerate } from "./modules/rushCardGenerate.js";
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
-const port = process.env.PORT || 8080;
 app.get("/", (req, res) => {
+  const port = process.env.PORT || 8080;
   res.send("Main Server:" + port);
 });
 app.post("/", async (req, res) => {
@@ -48,8 +48,4 @@ app.post("/rush", async (req, res) => {
     res.send("Error: Input Data Invalid.");
   }
 });
-app.listen(port, () => {
-  console.log("App started at http://localhost:" + port);
-});
-
 export { app };

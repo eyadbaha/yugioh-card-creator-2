@@ -1,5 +1,6 @@
 ARG NODE_IMAGE=node:24-alpine3.23
 ARG RUNTIME_IMAGE=alpine:3.23
+ARG LAMBDA_RIC_VERSION=4.0.2
 
 FROM ${NODE_IMAGE} AS deps
 
@@ -26,6 +27,13 @@ RUN npm ci --omit=dev \
     && npm cache clean --force \
     && rm -rf node_modules/@img/sharp-linux-* node_modules/@img/sharp-libvips-linux-*
 
+FROM prod-deps AS prod-lambda-deps
+ARG LAMBDA_RIC_VERSION
+RUN apk add --no-cache --virtual .lambda-ric-build-deps g++ make python3 \
+    && npm install --omit=dev --no-save aws-lambda-ric@${LAMBDA_RIC_VERSION} \
+    && npm cache clean --force \
+    && apk del .lambda-ric-build-deps
+
 FROM ${RUNTIME_IMAGE} AS production
 ENV NODE_ENV=production
 RUN apk add --no-cache nodejs libstdc++ \
@@ -37,4 +45,11 @@ COPY --chown=node:node package.json index.mjs ./
 COPY --chown=node:node assets ./assets
 COPY --from=build --chown=node:node /var/task/build ./build
 USER node
-CMD ["node", "build/app.js"]
+CMD ["node", "build/server.js"]
+
+FROM production AS prod-lambda
+USER root
+COPY --from=prod-lambda-deps --chown=node:node /var/task/node_modules ./node_modules
+USER node
+ENTRYPOINT ["node", "./node_modules/aws-lambda-ric/index.mjs"]
+CMD ["index.handler"]

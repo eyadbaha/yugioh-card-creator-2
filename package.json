@@ -6,9 +6,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node build/app.js",
+    "test": "npm run build && node build/server.js",
     "dev": "nodemon",
-    "start": "node build/app.js"
+    "start": "node build/server.js"
   },
   "author": "",
   "license": "ISC",
