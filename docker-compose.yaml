@@ -22,7 +22,6 @@ services:
     env_file:
       - .env
     image: card:prod
-    command: npm run start
     cpus: 2
     mem_limit: 2048m
     ports:
