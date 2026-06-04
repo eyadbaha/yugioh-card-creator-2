@@ -37,6 +37,7 @@ const calcWidth = (text: string, inputOptions: textOptions = {}): number => {
 
 let getTxtWidth = (text: string, inputOptions: textOptions = {}): number => {
   if (inputOptions.smallCaps) {
+    const smallCapsSize = (inputOptions.size ?? def.size) * 0.8;
     const smallCaps =
       text
         .match(/[a-zà-ÿ]/g)
@@ -44,7 +45,7 @@ let getTxtWidth = (text: string, inputOptions: textOptions = {}): number => {
         ?.toUpperCase() || "";
     const nonSmallCaps = text.replace(/[a-zà-ÿ]/g, "") || "";
     return (
-      calcWidth(smallCaps, { ...inputOptions, size: inputOptions.size * 0.8 || def.size }) +
+      calcWidth(smallCaps, { ...inputOptions, size: smallCapsSize }) +
       calcWidth(nonSmallCaps, inputOptions)
     );
   }

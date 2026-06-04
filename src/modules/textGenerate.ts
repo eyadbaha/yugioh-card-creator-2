@@ -16,16 +16,16 @@ const escape = (s: string | number): string | number => {
   }
   return s;
 };
-function smallCapsConvert(inputText, options: generateOptions) {
+function smallCapsConvert(inputText: string, options: generateOptions) {
   return inputText.replace(/(?<!&[^;]*)[a-zà-ÿ]/g, (match) => {
     return `<tspan font-size="${options.size * 0.8}" stroke-width="${options.stroke || 0}" letter-spacing="${
       options.letterSpacing || 0
     }">${match.toUpperCase()}</tspan>`;
   });
 }
-function smallCapsConvertWithStroke(inputText, options: generateOptions) {
+function smallCapsConvertWithStroke(inputText: string, options: generateOptions) {
   return inputText.replace(/(?<!&[^;]*)[a-zà-ÿ]/g, (match) => {
-    return `<tspan font-size="${options.size * 0.8}" stroke-width="${options.stroke + 2 || 0}" letter-spacing="${
+    return `<tspan font-size="${options.size * 0.8}" stroke-width="${(options.stroke || 0) + 2}" letter-spacing="${
       options.letterSpacing || 0
     }">${match.toUpperCase()}</tspan>`;
   });
@@ -54,7 +54,7 @@ const createTextLineBuffer = (text: string, options: generateOptions): Buffer =>
   if (options.smallCaps) {
     textWithStroke = `<text ${position} fill="#43161E" letter-spacing="${options.letterSpacing}" opacity="${
       options.opacity
-    }" font-weight="${options.weight}" stroke-width="${options.stroke + 2}" stroke="#43161E" transform="scale(${
+    }" font-weight="${options.weight}" stroke-width="${(options.stroke || 0) + 2}" stroke="#43161E" transform="scale(${
       options.scaleX
     }, ${options.scaleY})" font-family="${options.fontFamily}" font-size="${
       options.size

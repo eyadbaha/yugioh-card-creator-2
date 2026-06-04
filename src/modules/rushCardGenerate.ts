@@ -16,6 +16,7 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
   } else {
     artBuffer = Buffer.from(options.art, "base64");
   }
+  const monsterType = options.monsterType ?? "";
   const OverlayOptions: OverlayOptionsPromises[] = [];
   const templatePath = `${assetsDir}/rush/${importedStyle.styleName}/template/${options.template}.png`;
   const cardSize = options.fullArt
@@ -34,12 +35,12 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
     {
       input: textGenerate(options.cardText, {
         ...importedStyle.text,
-        fontFamily: options.monsterType.toLocaleLowerCase()?.includes("normal")
-          ? options.monsterType.toLocaleLowerCase()?.includes("pendulum")
+        fontFamily: monsterType.toLocaleLowerCase().includes("normal")
+          ? monsterType.toLocaleLowerCase().includes("pendulum")
             ? importedStyle.text.fontFamilyNormalPendulum
             : importedStyle.text.fontFamilyNormal
           : importedStyle.text.fontFamily,
-        size: options.monsterType.toLocaleLowerCase()?.includes("normal") ? importedStyle.text.sizeNormal || 1 : importedStyle.text.size,
+        size: monsterType.toLocaleLowerCase().includes("normal") ? importedStyle.text.sizeNormal || 1 : importedStyle.text.size,
       }),
       top: importedStyle.text.top,
       left: importedStyle.text.left,
@@ -51,13 +52,13 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
       ...importedStyle.legend,
     });
   }
-  if (options.template != "spell" && options.template != "trap" && options.monsterType) {
+  if (options.template != "spell" && options.template != "trap" && monsterType) {
     //Card is a Monster
 
     //Overlay Monster  type text, Attack, Description
-    const [monsterType, atk] = [textGenerate(options.monsterType, importedStyle.type), textGenerate(options.atk as string, { ...importedStyle.stat })];
+    const atk = textGenerate(options.atk as string, { ...importedStyle.stat });
     OverlayOptions.unshift({
-      input: textGenerate(options.monsterType, importedStyle.type),
+      input: textGenerate(monsterType, importedStyle.type),
       top: importedStyle.type.top,
       left: importedStyle.type.left,
     });
@@ -94,17 +95,19 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
     }
   } else {
     //Card is Spell/Trap
-    if (["/equip]", "/field]"].some((e) => options.monsterType?.toLocaleLowerCase().endsWith(e))) {
-      const type = options.monsterType.replace(/([^]]*)\]/, "$1");
+    if (["/equip]", "/field]"].some((e) => monsterType.toLocaleLowerCase().endsWith(e))) {
+      const type = monsterType.replace(/([^]]*)\]/, "$1");
       const width = getTxtWidth(type, importedStyle.type);
-      const icon = options.monsterType?.toLocaleLowerCase().match(/\/([^/]+)\]$/)?.[1];
+      const icon = monsterType.toLocaleLowerCase().match(/\/([^/]+)\]$/)?.[1] || "";
+      const typeLeft = importedStyle.type.left || 0;
+      const typeSize = importedStyle.type.size || 0;
       const iconPosition = {
         top: importedStyle.type.top,
-        left: Math.ceil(importedStyle.type.left + width + importedStyle.spellIcon.icon.width / 2),
+        left: Math.ceil(typeLeft + width + importedStyle.spellIcon.icon.width / 2),
       };
       const lastPosition = {
         top: importedStyle.type.top,
-        left: Math.ceil(iconPosition.left + importedStyle.spellIcon.icon.width + importedStyle.type.size * 0.1),
+        left: Math.ceil(iconPosition.left + importedStyle.spellIcon.icon.width + typeSize * 0.1),
       };
       OverlayOptions.unshift(
         {
@@ -123,7 +126,7 @@ const rushCardGenerate = async (options: APIBody, importedStyle: settings) => {
       );
     } else {
       OverlayOptions.unshift({
-        input: textGenerate(options.monsterType, importedStyle.type),
+        input: textGenerate(monsterType, importedStyle.type),
         top: importedStyle.type.top,
         left: importedStyle.type.left,
       });
