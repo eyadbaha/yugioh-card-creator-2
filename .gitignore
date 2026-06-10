@@ -1,5 +1,5 @@
 build
 node_modules
-assets
+styles
 .env
 *zip

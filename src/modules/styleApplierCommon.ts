@@ -5,16 +5,22 @@ import {
   type RenderOverlay,
   type RenderSource,
 } from "./cardRenderer.js";
+import path from "path";
 import type { CardRenderPlan, LoadedCardArt } from "./renderPlan.js";
+import type { LoadedStyle } from "./styleRegistry.js";
 import type { settings } from "./types.js";
 
-type CardKind = "standard" | "rush";
 type StyleAssetResolver = (area: "icons" | "template", fileName: string) => string;
 
 const createStyleAssetResolver =
-  (assetsDir: string, kind: CardKind, styleName: string): StyleAssetResolver =>
-  (area, fileName) =>
-    `${assetsDir}/${kind}/${styleName}/${area}/${fileName}`;
+  (style: LoadedStyle): StyleAssetResolver =>
+  (area, fileName) => {
+    if (!style.assets[area].has(fileName)) {
+      throw new Error(`Missing ${area} asset "${fileName}" for style "${style.type}/${style.name}"`);
+    }
+
+    return path.join(style.directory, area, fileName);
+  };
 
 const lowerAssetName = (value?: string) => value?.toLocaleLowerCase();
 
@@ -66,6 +72,5 @@ export {
   defOverlay,
   lowerAssetName,
   typeTextOverlay,
-  type CardKind,
   type StyleAssetResolver,
 };

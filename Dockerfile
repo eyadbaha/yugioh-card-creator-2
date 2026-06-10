@@ -9,15 +9,17 @@ COPY package*.json ./
 RUN npm ci
 
 FROM deps AS development
+ENV FONTCONFIG_PATH=/var/task/styles/general/fonts
 COPY tsconfig.json nodemon.json ./
 COPY src ./src
-COPY assets ./assets
+COPY styles ./styles
 RUN npm run build
 CMD ["npm", "run", "dev"]
 
 FROM deps AS build
 COPY tsconfig.json ./
 COPY src ./src
+COPY styles ./styles
 RUN npm run build
 
 FROM ${NODE_IMAGE} AS prod-deps
@@ -29,24 +31,26 @@ RUN npm ci --omit=dev \
 
 FROM ${RUNTIME_IMAGE} AS production
 ENV NODE_ENV=production
+ENV FONTCONFIG_PATH=/var/task/styles/general/fonts
 RUN apk add --no-cache nodejs libstdc++ \
     && addgroup -g 1000 node \
     && adduser -u 1000 -G node -s /bin/sh -D node
 WORKDIR /var/task
 COPY --from=prod-deps --chown=node:node /var/task/node_modules ./node_modules
 COPY --chown=node:node package.json index.mjs ./
-COPY --chown=node:node assets ./assets
+COPY --chown=node:node styles ./styles
 COPY --from=build --chown=node:node /var/task/build ./build
 USER node
 CMD ["node", "build/server.js"]
 
 FROM ${LAMBDA_IMAGE} AS prod-lambda
 ENV NODE_ENV=production
+ENV FONTCONFIG_PATH=/var/task/styles/general/fonts
 WORKDIR ${LAMBDA_TASK_ROOT}
 COPY package*.json ./
 RUN npm ci --omit=dev \
     && npm cache clean --force
 COPY index.mjs ./
-COPY assets ./assets
+COPY styles ./styles
 COPY --from=build /var/task/build ./build
 CMD ["index.handler"]

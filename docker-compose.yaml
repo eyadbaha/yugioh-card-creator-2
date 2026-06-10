@@ -12,7 +12,9 @@ services:
       - "5000:8080"
     volumes:
       - ./src:/var/task/src
-      - ./assets:/var/task/assets
+      - ./styles:/var/task/styles
+    environment:
+      STYLES_DIR: /var/task/styles
     env_file:
       - .env
   card-prod:
