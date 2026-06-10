@@ -3,6 +3,7 @@ import z from "zod";
 const attributes = ["LIGHT", "DARK", "WIND", "FIRE", "EARTH", "WATER", "DIVINE", "SPELL", "TRAP", "LAUGH"] as const;
 const templates = ["normal", "effect", "ritual", "fusion", "synchro", "xyz", "link", "spell", "trap", "token"] as const;
 const linkArrowsEnum = ["Top", "Top-Right", "Right", "Bottom-Right", "Bottom", "Bottom-Left", "Left", "Top-Left"] as const;
+const styleNameSchema = z.string().min(1).regex(/^[A-Za-z0-9_-]+$/);
 const generateOptionsSchema = z.object({
   width: z.number(),
   height: z.number(),
@@ -128,7 +129,7 @@ const settingsMapSchema = z.map(z.string(), settingsSchema);
 const APIBodySchema = z
   .object({
     name: z.string(),
-    style: z.enum(["duel_links"]),
+    style: styleNameSchema,
     attribute: z.enum(attributes),
     level: z.number().nonnegative().lt(14).optional(),
     art: z.string(),

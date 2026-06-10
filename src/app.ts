@@ -1,8 +1,10 @@
 import express from "express";
-import { cardGenerate } from "./modules/cardGenerate.js";
-import { APIBodySchema } from "./modules/types.js";
 import fs from "fs";
+import { cardGenerate } from "./modules/cardGenerate.js";
 import { rushCardGenerate } from "./modules/rushCardGenerate.js";
+import type { CardKind } from "./modules/styleApplierCommon.js";
+import { APIBodySchema } from "./modules/types.js";
+import type { APIBody, settings } from "./modules/types.js";
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
@@ -10,42 +12,41 @@ app.get("/", (req, res) => {
   const port = process.env.PORT || 8080;
   res.send("Main Server:" + port);
 });
-app.post("/", async (req, res) => {
-  const assetsDir = process.env.ASSETS_DIR || `./assets`;
-  if (APIBodySchema.safeParse(req.body).success) {
+
+const cardRoute =
+  (kind: CardKind, generate: (options: APIBody, style: settings) => Promise<Buffer>): express.RequestHandler =>
+  async (req, res) => {
+    const assetsDir = process.env.ASSETS_DIR || `./assets`;
+    const parsedBody = APIBodySchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).send("Error: Input Data Invalid.");
+      return;
+    }
+    let settingsFile: string;
     try {
-      const settingsFile = fs.readFileSync(`${assetsDir}/standard/${req.body.style}/settings.json`, "utf8");
-      const settings = JSON.parse(settingsFile);
-      const card = await cardGenerate(req.body, settings as any);
+      settingsFile = fs.readFileSync(`${assetsDir}/${kind}/${parsedBody.data.style}/settings.json`, "utf8");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+        res.status(400).send(`Error: Unknown Style "${parsedBody.data.style}".`);
+        return;
+      }
+      console.error(e);
+      res.status(500).send("Server Error: Failed to Generate Card.");
+      return;
+    }
+    try {
+      const settings = { ...JSON.parse(settingsFile), styleName: parsedBody.data.style };
+      const card = await generate(parsedBody.data, settings);
       res.writeHead(200, {
         "Content-Type": "image/webp",
       });
       res.end(card);
     } catch (e) {
       console.error(e);
-      res.send("Server Error: Failed to Generate Card.");
+      res.status(500).send("Server Error: Failed to Generate Card.");
     }
-  } else {
-    res.send("Error: Input Data Invalid.");
-  }
-});
-app.post("/rush", async (req, res) => {
-  const assetsDir = process.env.ASSETS_DIR || `./assets`;
-  if (APIBodySchema.safeParse(req.body).success) {
-    try {
-      const settingsFile = fs.readFileSync(`${assetsDir}/rush/${req.body.style}/settings.json`, "utf8");
-      const settings = JSON.parse(settingsFile) as any;
-      const card = await rushCardGenerate(req.body, { ...settings, styleName: req.body.style });
-      res.writeHead(200, {
-        "Content-Type": "image/webp",
-      });
-      res.end(card);
-    } catch (e) {
-      console.error(e);
-      res.send("Server Error: Failed to Generate Card.");
-    }
-  } else {
-    res.send("Error: Input Data Invalid.");
-  }
-});
+  };
+
+app.post("/", cardRoute("standard", cardGenerate));
+app.post("/rush", cardRoute("rush", rushCardGenerate));
 export { app };
