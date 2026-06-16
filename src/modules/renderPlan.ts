@@ -25,10 +25,6 @@ type LoadedCardArt = {
   getDimensions: () => { width: number; height: number };
 };
 
-const prepend = <TLayer>(layers: TLayer[], ...newLayers: TLayer[]) => {
-  layers.unshift(...newLayers);
-};
-
 type StandardRenderLayer =
   | { kind: "name"; text: string; overrush?: boolean }
   | { kind: "attribute"; attribute?: string }
@@ -52,7 +48,7 @@ type StandardRenderLayer =
   | { kind: "spellIcon"; icon?: string };
 
 type RushRenderLayer =
-  | { kind: "name"; text: string }
+  | { kind: "name"; text: string; overrush?: boolean }
   | { kind: "attribute"; attribute?: string }
   | { kind: "cardText"; text: string; variant: TextVariant }
   | { kind: "legend" }
@@ -82,7 +78,6 @@ export {
   linkArrowPositions,
   isMonsterCard,
   getTextVariant,
-  prepend,
   type CardRenderPlan,
   type LinkArrowPosition,
   type LoadedCardArt,

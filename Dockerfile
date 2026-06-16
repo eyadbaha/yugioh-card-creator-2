@@ -9,7 +9,6 @@ COPY package*.json ./
 RUN npm ci
 
 FROM deps AS development
-ENV FONTCONFIG_PATH=/var/task/styles/general/fonts
 COPY tsconfig.json nodemon.json ./
 COPY src ./src
 COPY styles ./styles
@@ -31,7 +30,6 @@ RUN npm ci --omit=dev \
 
 FROM ${RUNTIME_IMAGE} AS production
 ENV NODE_ENV=production
-ENV FONTCONFIG_PATH=/var/task/styles/general/fonts
 RUN apk add --no-cache nodejs libstdc++ \
     && addgroup -g 1000 node \
     && adduser -u 1000 -G node -s /bin/sh -D node
@@ -45,7 +43,6 @@ CMD ["node", "build/server.js"]
 
 FROM ${LAMBDA_IMAGE} AS prod-lambda
 ENV NODE_ENV=production
-ENV FONTCONFIG_PATH=/var/task/styles/general/fonts
 WORKDIR ${LAMBDA_TASK_ROOT}
 COPY package*.json ./
 RUN npm ci --omit=dev \

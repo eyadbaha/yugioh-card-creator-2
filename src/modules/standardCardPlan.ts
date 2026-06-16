@@ -3,7 +3,6 @@ import {
   getTextVariant,
   isMonsterCard,
   linkArrowPositions,
-  prepend,
   type CardRenderPlan,
   type StandardRenderLayer,
 } from "./renderPlan.js";
@@ -18,76 +17,89 @@ const appendRepeated = (
   }
 };
 
+const appendMonsterFrameLayers = (layers: StandardRenderLayer[], options: APIBody, statCount: number) => {
+  if (options.template === "xyz") {
+    appendRepeated(layers, statCount, (index) => ({ kind: "rank", index }));
+    layers.push({ kind: "def", text: options.def as string });
+    return;
+  }
+
+  if (options.template === "link") {
+    const selectedLinkArrows = new Set(options.linkArrows ?? []);
+    layers.push({ kind: "linkRating", text: selectedLinkArrows.size.toString() });
+
+    Array.from(selectedLinkArrows)
+      .filter((arrow) => linkArrowPositions.includes(arrow))
+      .reverse()
+      .forEach((arrow) => layers.push({ kind: "linkArrow", arrow }));
+    return;
+  }
+
+  appendRepeated(layers, statCount, (index) => ({ kind: "level", index }));
+  layers.push({ kind: "def", text: options.def as string });
+};
+
+const appendPendulumLayers = (layers: StandardRenderLayer[], options: APIBody) => {
+  const scaleText = options.scale?.toString() || "0";
+
+  layers.push(
+    { kind: "pendulumArtMask" },
+    { kind: "pendulumArt" },
+    { kind: "templateOverlay", templateName: `pendulum-${options.template}` },
+    { kind: "templateOverlay", templateName: "pendulum" },
+    { kind: "pendulumText", text: options.pendulumText || "" },
+    { kind: "scale", text: scaleText, side: "right" },
+    { kind: "scale", text: scaleText, side: "left" }
+  );
+};
+
 const buildStandardCardPlan = (options: APIBody): CardRenderPlan<StandardRenderLayer> => {
   const layers: StandardRenderLayer[] = [];
   const statCount = options.disableStats ? 0 : options.level || 0;
 
-  prepend(
-    layers,
-    { kind: "name", text: options.name, overrush: options.overrushName },
-    { kind: "attribute", attribute: options.attribute }
-  );
-
   if (isMonsterCard(options)) {
-    if (options.template === "xyz") {
-      appendRepeated(layers, statCount, (index) => ({ kind: "rank", index }));
-      layers.push({ kind: "def", text: options.def as string });
-    } else if (options.template === "link") {
-      const selectedLinkArrows = new Set(options.linkArrows ?? []);
-
-      selectedLinkArrows.forEach((arrow) => {
-        if (linkArrowPositions.includes(arrow)) {
-          prepend(layers, { kind: "linkArrow", arrow });
-        }
-      });
-
-      prepend(layers, { kind: "linkRating", text: selectedLinkArrows.size.toString() });
-    } else {
-      appendRepeated(layers, statCount, (index) => ({ kind: "level", index }));
-      layers.push({ kind: "def", text: options.def as string });
+    if (options.pendulum !== false && options.template !== "link") {
+      appendPendulumLayers(layers, options);
+    } else if (!options.fullArt) {
+      layers.push({ kind: "art" });
     }
 
-    prepend(
-      layers,
+    layers.push(
       { kind: "monsterType", text: options.monsterType as string },
       { kind: "monsterText", text: options.cardText, variant: getTextVariant(options.monsterType) },
       { kind: "atk", text: options.atk as string }
     );
 
-    if (options.pendulum === false || options.template === "link") {
-      if (!options.fullArt) {
-        prepend(layers, { kind: "art" });
-      }
-    } else {
-      const scaleText = options.scale?.toString() || "0";
-
-      prepend(
-        layers,
-        { kind: "pendulumArtMask" },
-        { kind: "pendulumArt" },
-        { kind: "templateOverlay", templateName: `pendulum-${options.template}` },
-        { kind: "templateOverlay", templateName: "pendulum" },
-        { kind: "pendulumText", text: options.pendulumText || "" },
-        { kind: "scale", text: scaleText, side: "right" },
-        { kind: "scale", text: scaleText, side: "left" }
+    if (options.template === "link") {
+      appendMonsterFrameLayers(layers, options, statCount);
+      layers.push(
+        { kind: "name", text: options.name, overrush: options.overrushName },
+        { kind: "attribute", attribute: options.attribute }
       );
+    } else {
+      layers.push(
+        { kind: "name", text: options.name, overrush: options.overrushName },
+        { kind: "attribute", attribute: options.attribute }
+      );
+      appendMonsterFrameLayers(layers, options, statCount);
     }
   } else {
-    if (options.icon === "normal") {
-      prepend(layers, { kind: "spellTypeNormal", attribute: options.attribute });
-    } else {
-      prepend(
-        layers,
-        { kind: "spellType", attribute: options.attribute },
-        { kind: "spellIcon", icon: options.icon }
-      );
-    }
+    layers.push({ kind: "spellText", text: options.cardText });
 
     if (!options.fullArt) {
-      prepend(layers, { kind: "art" });
+      layers.push({ kind: "art" });
     }
 
-    prepend(layers, { kind: "spellText", text: options.cardText });
+    if (options.icon === "normal") {
+      layers.push({ kind: "spellTypeNormal", attribute: options.attribute });
+    } else {
+      layers.push({ kind: "spellType", attribute: options.attribute }, { kind: "spellIcon", icon: options.icon });
+    }
+
+    layers.push(
+      { kind: "name", text: options.name, overrush: options.overrushName },
+      { kind: "attribute", attribute: options.attribute }
+    );
   }
 
   return {

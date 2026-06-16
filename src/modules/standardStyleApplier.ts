@@ -19,14 +19,81 @@ import {
 } from "./styleApplierCommon.js";
 import type { generateOptions, settings } from "./types.js";
 
-const getNameTextOptions = (plan: CardRenderPlan<StandardRenderLayer>, style: settings, layer: StandardRenderLayer) => {
+const standardStyleAssetRequirements = {
+  required: {
+    icons: [
+      "dark.png",
+      "divine.png",
+      "earth.png",
+      "fire.png",
+      "laugh.png",
+      "light.png",
+      "lv.png",
+      "r.png",
+      "spell-icon.png",
+      "spell-normal.png",
+      "spell.png",
+      "trap-icon.png",
+      "trap-normal.png",
+      "trap.png",
+      "water.png",
+      "wind.png",
+      "bottom-left.png",
+      "bottom-right.png",
+      "bottom.png",
+      "left.png",
+      "right.png",
+      "top-left.png",
+      "top-right.png",
+      "top.png",
+    ],
+    template: [
+      "effect.png",
+      "fusion.png",
+      "link.png",
+      "normal.png",
+      "ritual.png",
+      "spell.png",
+      "synchro.png",
+      "token.png",
+      "trap.png",
+      "xyz.png",
+    ],
+  },
+  optional: {
+    icons: ["continuous.png", "counter.png", "equip.png", "field.png", "quick-play.png", "ritual.png"],
+    template: [
+      "pendulum.png",
+      "pendulum-effect.png",
+      "pendulum-fusion.png",
+      "pendulum-normal.png",
+      "pendulum-ritual.png",
+      "pendulum-synchro.png",
+      "pendulum-xyz.png",
+    ],
+  },
+};
+
+const requireSetting = <T>(value: T | undefined, key: string): T => {
+  if (!value) {
+    throw new Error(`Standard style is missing required settings section "${key}"`);
+  }
+
+  return value;
+};
+
+const getNameTextOptions = (
+  plan: CardRenderPlan<StandardRenderLayer>,
+  style: settings,
+  layer: Extract<StandardRenderLayer, { kind: "name" }>
+) => {
   const forceWhiteName = ["link", "xyz", "spell", "trap"].some((template) => `${plan.template}`.includes(template));
   const color = forceWhiteName ? "white" : style.name.color;
 
   return {
     ...style.name,
     color,
-    overrush: layer.kind === "name" ? layer.overrush : undefined,
+    overrush: layer.overrush ?? style.name.overrush,
   };
 };
 
@@ -34,7 +101,7 @@ const getMonsterTextOptions = (style: settings, variant: TextVariant): generateO
   if (variant === "normalPendulum") {
     return {
       ...style.text,
-      fontFamily: style.text.fontFamilyNormalPendulum,
+      fontFamily: style.text.fontFamilyNormalPendulum || style.text.fontFamilyNormal,
     };
   }
 
@@ -49,36 +116,37 @@ const getMonsterTextOptions = (style: settings, variant: TextVariant): generateO
 };
 
 const getPendulumArtResizeOptions = (style: settings, art: LoadedCardArt): ImageResizeOptions => {
+  const pendulumArt = requireSetting(style.pendulumArt, "pendulumArt");
   const { width, height } = art.getDimensions();
   const artRatio = height / width;
 
-  if (artRatio < style.pendulumArt.height2 / style.pendulumArt.width) {
+  if (artRatio < pendulumArt.height2 / pendulumArt.width) {
     return {
-      width: style.pendulumArt.width,
-      height: style.pendulumArt.height2,
+      width: pendulumArt.width,
+      height: pendulumArt.height2,
       fit: "fill",
     };
   }
 
-  if (artRatio < style.pendulumArt.height1 / style.pendulumArt.width) {
+  if (artRatio < pendulumArt.height1 / pendulumArt.width) {
     return {
-      width: style.pendulumArt.width,
-      height: style.pendulumArt.height2,
+      width: pendulumArt.width,
+      height: pendulumArt.height2,
       position: "top",
     };
   }
 
   if (artRatio < 1.263) {
     return {
-      width: style.pendulumArt.width,
-      height: style.pendulumArt.height1,
+      width: pendulumArt.width,
+      height: pendulumArt.height1,
       position: "top",
     };
   }
 
   return {
-    width: style.pendulumArt.width,
-    height: style.pendulumArt.height,
+    width: pendulumArt.width,
+    height: pendulumArt.height,
     position: "top",
   };
 };
@@ -99,26 +167,31 @@ const buildLayerOverlay = (
     case "attribute":
       return attributeOverlay(assets, style, layer.attribute);
     case "rank":
+      const rank = requireSetting(style.rank, "rank");
+      const rankLevel = requireSetting(style.level, "level");
       return {
-        input: assets("icons", "r.png"),
-        left: (style.rank.left as number) + (style.level.width + (style.level.spacing as number)) * layer.index,
-        top: style.level.top,
+        input: assets("icons", "r.png").buffer,
+        left: (rank.left as number) + (rankLevel.width + (rankLevel.spacing as number)) * layer.index,
+        top: rankLevel.top,
       };
     case "level":
+      const level = requireSetting(style.level, "level");
       return {
-        input: assets("icons", "lv.png"),
-        left: (style.level.left as number) - (style.level.width + (style.level.spacing as number)) * layer.index,
-        top: style.level.top,
+        input: assets("icons", "lv.png").buffer,
+        left: (level.left as number) - (level.width + (level.spacing as number)) * layer.index,
+        top: level.top,
       };
     case "linkArrow":
+      const linkArrows = requireSetting(style.linkArrows, "linkArrows");
       return {
-        input: assets("icons", `${layer.arrow.toLocaleLowerCase()}.png`),
-        ...style.linkArrows[layer.arrow],
+        input: assets("icons", `${layer.arrow.toLocaleLowerCase()}.png`).buffer,
+        ...linkArrows[layer.arrow],
       };
     case "linkRating":
+      const linkRating = requireSetting(style.linkRating, "linkRating");
       return {
-        input: textInput(layer.text, style.linkRating),
-        ...style.linkRating,
+        input: textInput(layer.text, linkRating),
+        ...linkRating,
       };
     case "monsterType":
       return typeTextOverlay(style, layer.text);
@@ -140,48 +213,52 @@ const buildLayerOverlay = (
     case "art":
       return artOverlay(style, art);
     case "pendulumArtMask":
+      const pendulumArtMask = requireSetting(style.pendulumArt, "pendulumArt");
       return {
         input: solidImageInput(
-          style.pendulumArt.width,
-          style.pendulumArt.height,
+          pendulumArtMask.width,
+          pendulumArtMask.height,
           4,
           { r: 255, g: 255, b: 255, alpha: 1 },
           "jpeg"
         ),
-        ...style.pendulumArt,
+        ...pendulumArtMask,
       };
     case "pendulumArt":
+      const pendulumArt = requireSetting(style.pendulumArt, "pendulumArt");
       return {
         input: resizedImageInput(art.buffer, getPendulumArtResizeOptions(style, art)),
-        ...style.pendulumArt,
+        ...pendulumArt,
       };
     case "templateOverlay":
       return {
-        input: assets("template", `${layer.templateName}.png`),
+        input: assets("template", `${layer.templateName}.png`).buffer,
       };
     case "pendulumText":
+      const pendulumText = requireSetting(style.pendulumText, "pendulumText");
       return {
-        input: textInput(layer.text, style.pendulumText),
-        ...style.pendulumText,
+        input: textInput(layer.text, pendulumText),
+        ...pendulumText,
       };
     case "scale":
+      const scale = requireSetting(style.scale, "scale");
       return {
-        input: textInput(layer.text, style.scale),
-        ...(layer.side === "left" ? style.scale.leftScale : style.scale.rightScale),
+        input: textInput(layer.text, scale),
+        ...(layer.side === "left" ? scale.leftScale : scale.rightScale),
       };
     case "spellTypeNormal":
       return {
-        input: assets("icons", `${lowerAssetName(layer.attribute)}-normal.png`),
+        input: assets("icons", `${lowerAssetName(layer.attribute)}-normal.png`).buffer,
         ...style.spellIcon.text,
       };
     case "spellType":
       return {
-        input: assets("icons", `${lowerAssetName(layer.attribute)}-icon.png`),
+        input: assets("icons", `${lowerAssetName(layer.attribute)}-icon.png`).buffer,
         ...style.spellIcon.text,
       };
     case "spellIcon":
       return {
-        input: assets("icons", `${lowerAssetName(layer.icon)}.png`),
+        input: assets("icons", `${lowerAssetName(layer.icon)}.png`).buffer,
         ...style.spellIcon.icon,
       };
   }
@@ -197,4 +274,4 @@ const applyStandardStyle = (
   overlays: plan.layers.map((layer) => buildLayerOverlay(layer, plan, style, assets, art)),
 });
 
-export { applyStandardStyle };
+export { applyStandardStyle, standardStyleAssetRequirements };

@@ -1,14 +1,25 @@
 import express from "express";
-import { cardGenerate } from "./modules/cardGenerate.js";
-import { rushCardGenerate } from "./modules/rushCardGenerate.js";
-import { loadStyleRegistry, type LoadedStyle, type StyleRegistry, type StyleType } from "./modules/styleRegistry.js";
+import { CardArtLoadError } from "./modules/cardArt.js";
+import { cardGenerate, rushCardGenerate } from "./modules/cardGenerate.js";
+import {
+  createStyleRegistryStore,
+  type LoadedStyle,
+  type StyleRegistry,
+  type StyleType,
+} from "./modules/styleRegistry.js";
 import { APIBodySchema } from "./modules/types.js";
 import type { APIBody } from "./modules/types.js";
+
+type StyleRegistryGetter = () => StyleRegistry;
+type StyleRegistrySource = StyleRegistry | StyleRegistryGetter;
+
+const getStyleRegistryGetter = (source: StyleRegistrySource): StyleRegistryGetter =>
+  typeof source === "function" ? source : () => source;
 
 const cardRoute =
   (
     type: StyleType,
-    styleRegistry: StyleRegistry,
+    getStyleRegistry: StyleRegistryGetter,
     generate: (options: APIBody, style: LoadedStyle) => Promise<Buffer>
   ): express.RequestHandler =>
   async (req, res) => {
@@ -18,6 +29,7 @@ const cardRoute =
       return;
     }
 
+    const styleRegistry = getStyleRegistry();
     const style = styleRegistry.getStyle(type, parsedBody.data.style);
     if (!style) {
       res.status(400).send(`Error: Unknown Style "${parsedBody.data.style}".`);
@@ -31,12 +43,18 @@ const cardRoute =
       });
       res.end(card);
     } catch (e) {
+      if (e instanceof CardArtLoadError) {
+        res.status(400).send("Error: art could not be loaded.");
+        return;
+      }
+
       console.error(e);
       res.status(500).send("Server Error: Failed to Generate Card.");
     }
   };
 
-const createApp = (styleRegistry: StyleRegistry) => {
+const createApp = (styleRegistrySource: StyleRegistrySource) => {
+  const getStyleRegistry = getStyleRegistryGetter(styleRegistrySource);
   const app = express();
   app.use(express.json({ limit: "5mb" }));
   app.get("/", (req, res) => {
@@ -44,12 +62,17 @@ const createApp = (styleRegistry: StyleRegistry) => {
     res.send("Main Server:" + port);
   });
 
-  app.post("/", cardRoute("standard", styleRegistry, cardGenerate));
-  app.post("/rush", cardRoute("rush", styleRegistry, rushCardGenerate));
+  app.post("/", cardRoute("standard", getStyleRegistry, cardGenerate));
+  app.post("/rush", cardRoute("rush", getStyleRegistry, rushCardGenerate));
 
   return app;
 };
 
-const createDefaultApp = () => createApp(loadStyleRegistry());
+const createDefaultApp = () => {
+  const styleRegistryStore = createStyleRegistryStore();
+  const app = createApp(styleRegistryStore.getStyleRegistry);
+  app.locals.styleRegistryStore = styleRegistryStore;
+  return app;
+};
 
 export { createApp, createDefaultApp };

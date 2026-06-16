@@ -33,20 +33,6 @@ const generateOptionsSchema = z.object({
     .optional(),
   overrush: z.boolean().optional(),
 });
-const cardDataSchema = z.object({
-  name: z.string(),
-  id: z.number(),
-  attribute: z.enum(attributes).optional(),
-  level: z.number().nonnegative().lt(14).optional(),
-  race: z.string().optional(),
-  type: z.string(),
-  desc: z.string(),
-  pdesc: z.string().optional(),
-  scale: z.number().nonnegative().lt(15).optional(),
-  atk: z.number().nonnegative().lt(10000).optional(),
-  def: z.number().nonnegative().lt(10000).optional(),
-  linkmarkers: z.array(z.string()).optional(),
-});
 const linkArrowsSchema = z.object({
   Top: generateOptionsSchema,
   "Top-Right": generateOptionsSchema,
@@ -70,30 +56,34 @@ const spellIconSchema = z.object({
   }),
 });
 const settingsSchema = z.object({
-  styleName: z.string(),
+  styleName: styleNameSchema,
   name: generateOptionsSchema,
   attribute: generateOptionsSchema,
-  level: generateOptionsSchema.extend({
-    levelString: generateOptionsSchema,
-  }),
-  rank: z.object({ left: z.number() }),
+  level: generateOptionsSchema
+    .extend({
+      levelString: generateOptionsSchema.optional(),
+    })
+    .optional(),
+  rank: z.object({ left: z.number() }).optional(),
   art: generateOptionsSchema,
-  pendulumArt: z.object({
-    left: z.number(),
-    top: z.number(),
-    width: z.number(),
-    height: z.number(),
-    height1: z.number(),
-    height2: z.number(),
-  }),
+  pendulumArt: z
+    .object({
+      left: z.number(),
+      top: z.number(),
+      width: z.number(),
+      height: z.number(),
+      height1: z.number(),
+      height2: z.number(),
+    })
+    .optional(),
   type: generateOptionsSchema,
   text: generateOptionsSchema.extend({
     fontFamilyNormal: z.string(),
-    fontFamilyNormalPendulum: z.string(),
+    fontFamilyNormalPendulum: z.string().optional(),
     sizeNormal: z.number().optional(),
   }),
   textSpell: generateOptionsSchema,
-  pendulumText: generateOptionsSchema,
+  pendulumText: generateOptionsSchema.optional(),
   stat: generateOptionsSchema.extend({
     atk: z.object({
       left: z.number(),
@@ -106,26 +96,27 @@ const settingsSchema = z.object({
     maxAtk: z.object({
       left: z.number(),
       top: z.number(),
-    }),
+    }).optional(),
   }),
-  statSection: generateOptionsSchema,
-  maxSection: generateOptionsSchema,
-  linkRating: generateOptionsSchema,
-  scale: generateOptionsSchema.extend({
-    leftScale: z.object({
-      left: z.number(),
-      top: z.number(),
-    }),
-    rightScale: z.object({
-      left: z.number(),
-      top: z.number(),
-    }),
-  }),
-  linkArrows: linkArrowsSchema,
+  statSection: generateOptionsSchema.optional(),
+  maxSection: generateOptionsSchema.optional(),
+  linkRating: generateOptionsSchema.optional(),
+  scale: generateOptionsSchema
+    .extend({
+      leftScale: z.object({
+        left: z.number(),
+        top: z.number(),
+      }),
+      rightScale: z.object({
+        left: z.number(),
+        top: z.number(),
+      }),
+    })
+    .optional(),
+  linkArrows: linkArrowsSchema.optional(),
   spellIcon: spellIconSchema,
-  legend: generateOptionsSchema,
+  legend: generateOptionsSchema.optional(),
 });
-const settingsMapSchema = z.map(z.string(), settingsSchema);
 const APIBodySchema = z
   .object({
     name: z.string(),
@@ -151,10 +142,15 @@ const APIBodySchema = z
   })
   .passthrough();
 
-type cardData = z.infer<typeof cardDataSchema>;
 type APIBody = z.infer<typeof APIBodySchema>;
 type generateOptions = z.infer<typeof generateOptionsSchema>;
-type linkArrows = z.infer<typeof linkArrowsSchema>;
-type settingsMap = z.infer<typeof settingsMapSchema>;
 type settings = z.infer<typeof settingsSchema>;
-export { cardData, APIBody, generateOptions, settingsMap, settings, linkArrows, APIBodySchema };
+export {
+  APIBodySchema,
+  generateOptionsSchema,
+  settingsSchema,
+  styleNameSchema,
+  type APIBody,
+  type generateOptions,
+  type settings,
+};

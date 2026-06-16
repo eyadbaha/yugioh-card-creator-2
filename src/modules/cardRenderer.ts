@@ -1,10 +1,12 @@
 import sharp from "sharp";
+import type { RenderContext } from "./renderContext.js";
 import { textGenerate } from "./textGenerate.js";
 import { getTxtWidth } from "./textSizeCalculate.js";
 import type { generateOptions } from "./types.js";
 
 type ImageFormat = "jpeg" | "png";
 type ImageResizeOptions = sharp.ResizeOptions;
+type ImageDimensions = { width: number; height: number };
 
 type RenderSource =
   | Buffer
@@ -22,7 +24,7 @@ type RenderSource =
   | {
       kind: "imageSizedTo";
       input: Buffer;
-      metadataSource: string;
+      dimensions: ImageDimensions;
       format?: ImageFormat;
       resize?: ImageResizeOptions;
     }
@@ -77,13 +79,13 @@ const resizedImageInput = (input: Buffer, resize: ImageResizeOptions): RenderSou
 
 const imageSizedToInput = (
   input: Buffer,
-  metadataSource: string,
+  dimensions: ImageDimensions,
   format?: ImageFormat,
   resize?: ImageResizeOptions
 ): RenderSource => ({
   kind: "imageSizedTo",
   input,
-  metadataSource,
+  dimensions,
   format,
   resize,
 });
@@ -131,20 +133,19 @@ const applyFormat = (image: sharp.Sharp, format?: ImageFormat) => {
   return image;
 };
 
-const resolveSource = async (source: RenderSource): Promise<Buffer | string> => {
+const resolveSource = async (source: RenderSource, context: RenderContext): Promise<Buffer | string> => {
   if (typeof source === "string" || Buffer.isBuffer(source)) return source;
 
   switch (source.kind) {
     case "text":
-      return textGenerate(source.text, source.options);
+      return textGenerate(source.text, source.options, context);
     case "resizedImage":
       return sharp(source.input).resize(source.resize).toBuffer();
     case "imageSizedTo": {
-      const metadata = await sharp(source.metadataSource).metadata();
       return applyFormat(
         sharp(source.input).resize({
-          width: metadata.width as number,
-          height: metadata.height as number,
+          width: source.dimensions.width,
+          height: source.dimensions.height,
           fit: "fill",
           background: { r: 0, g: 0, b: 0, alpha: 0 },
           ...source.resize,
@@ -167,27 +168,27 @@ const resolveSource = async (source: RenderSource): Promise<Buffer | string> => 
   }
 };
 
-const resolvePosition = (position?: RenderPosition): number | undefined => {
+const resolvePosition = (position: RenderPosition | undefined, context: RenderContext): number | undefined => {
   if (position === undefined || typeof position === "number") return position;
 
   if (position.kind === "textWidthOffset") {
-    return Math.ceil(position.offset + getTxtWidth(position.text, position.options));
+    return Math.ceil(position.offset + getTxtWidth(position.text, position.options, context));
   }
 
   const iconLeft = Math.ceil(
-    position.typeLeft + getTxtWidth(position.text, position.options) + position.iconWidth / 2
+    position.typeLeft + getTxtWidth(position.text, position.options, context) + position.iconWidth / 2
   );
   return Math.ceil(iconLeft + position.iconWidth + position.typeSize * 0.1);
 };
 
-const resolveOverlay = async (overlay: RenderOverlay): Promise<sharp.OverlayOptions> => {
+const resolveOverlay = async (overlay: RenderOverlay, context: RenderContext): Promise<sharp.OverlayOptions> => {
   const { input, left, top, ...options } = overlay;
   const resolvedOverlay: sharp.OverlayOptions = {
     ...options,
-    input: await resolveSource(input),
+    input: await resolveSource(input, context),
   };
-  const resolvedLeft = resolvePosition(left);
-  const resolvedTop = resolvePosition(top);
+  const resolvedLeft = resolvePosition(left, context);
+  const resolvedTop = resolvePosition(top, context);
 
   if (resolvedLeft !== undefined) resolvedOverlay.left = resolvedLeft;
   if (resolvedTop !== undefined) resolvedOverlay.top = resolvedTop;
@@ -195,13 +196,23 @@ const resolveOverlay = async (overlay: RenderOverlay): Promise<sharp.OverlayOpti
   return resolvedOverlay;
 };
 
-const renderCardImage = async ({ base, overlays }: StyledCardRender) => {
+const readEnvInt = (value: string | undefined, fallback: number) => {
+  const parsed = Number.parseInt(value || "", 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const readWebpOptions = (): sharp.WebpOptions => ({
+  quality: readEnvInt(process.env.WEBP_QUALITY, 94),
+  effort: readEnvInt(process.env.WEBP_EFFORT, 4),
+});
+
+const renderCardImage = async ({ base, overlays }: StyledCardRender, context: RenderContext) => {
   const [baseInput, resolvedOverlays] = await Promise.all([
-    resolveSource(base),
-    Promise.all(overlays.map(resolveOverlay)),
+    resolveSource(base, context),
+    Promise.all(overlays.map((overlay) => resolveOverlay(overlay, context))),
   ]);
 
-  return sharp(baseInput).composite(resolvedOverlays).webp({ quality: 100 }).toBuffer();
+  return sharp(baseInput).composite(resolvedOverlays).webp(readWebpOptions()).toBuffer();
 };
 
 export {
@@ -216,5 +227,6 @@ export {
   type RenderPosition,
   type RenderSource,
   type ImageResizeOptions,
+  type ImageDimensions,
   type StyledCardRender,
 };

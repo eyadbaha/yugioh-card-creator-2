@@ -1,19 +1,32 @@
 import * as fontkit from "fontkit";
 import fs from "fs";
 import path from "path";
+import type { FontMetrics } from "./renderContext.js";
 
-const getFontMetrics = () => {
-  if (global.fontMetrics) return global.fontMetrics;
-  const fontsPath = path.join(process.env.STYLES_DIR || "./styles", "general", "fonts");
-  const fontMetrics: Record<string, ReturnType<typeof fontkit.openSync>> = {};
-  fs.readdirSync(fontsPath).forEach((file) => {
-    if (file.endsWith(".ttf") || file.endsWith(".otf")) {
-      const fontInstance = fontkit.openSync(path.join(fontsPath, file));
-      const fontName = file.replace(/.ttf/g, "").replace(/.otf/g, "");
-      fontMetrics[fontName] = fontInstance;
-    }
-  });
-  global.fontMetrics = fontMetrics;
+const isFontFile = (filePath: string) => /\.(otf|ttf)$/i.test(filePath);
+
+const collectFontFiles = (sourcePath: string): string[] => {
+  if (!fs.existsSync(sourcePath)) return [];
+
+  const stats = fs.statSync(sourcePath);
+  if (stats.isFile()) return isFontFile(sourcePath) ? [sourcePath] : [];
+  if (!stats.isDirectory()) return [];
+
+  return fs
+    .readdirSync(sourcePath)
+    .map((file) => path.join(sourcePath, file))
+    .filter(isFontFile);
 };
 
-export { getFontMetrics };
+const loadFontMetrics = (fontSources: string[]): FontMetrics => {
+  const fontMetrics: FontMetrics = {};
+
+  for (const fontFile of fontSources.flatMap(collectFontFiles)) {
+    const fontName = path.basename(fontFile).replace(/\.(otf|ttf)$/i, "");
+    fontMetrics[fontName] = fontkit.openSync(fontFile) as fontkit.Font;
+  }
+
+  return fontMetrics;
+};
+
+export { collectFontFiles, loadFontMetrics };

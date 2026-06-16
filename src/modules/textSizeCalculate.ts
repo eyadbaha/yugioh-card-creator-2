@@ -1,19 +1,9 @@
-type textOptions = {
-  fontFamily?: string;
-  size?: number;
-  width?: number;
-  height?: number;
-  lineHeight?: number;
-  letterSpacing?: number;
-  scaleX?: number;
-  scaleY?: number;
-  scale?: number;
-  smallCaps?: boolean;
-};
-import { getFontMetrics } from "./initiateFontsMetrics.js";
+import { requireFont, type RenderContext } from "./renderContext.js";
+import type { generateOptions } from "./types.js";
 
-getFontMetrics();
-const def = {
+type TextOptions = Partial<generateOptions>;
+
+const defaultTextOptions = {
   fontFamily: "MatrixBold",
   size: 20,
   width: 550,
@@ -23,65 +13,103 @@ const def = {
   scaleY: 1,
   letterSpacing: 0,
 };
-const calcWidth = (text: string, inputOptions: textOptions = {}): number => {
-  const options = { ...def, ...inputOptions };
-  const fontInstance = global.fontMetrics[options.fontFamily];
-  const fontSize = options.size;
+
+const smallCapsPattern = /[a-z\u00e0-\u00ff]/g;
+
+const normalizeOptions = (inputOptions: TextOptions = {}) => ({
+  ...defaultTextOptions,
+  ...inputOptions,
+});
+
+const calcWidth = (text: string, inputOptions: TextOptions, context: RenderContext): number => {
+  const options = normalizeOptions(inputOptions);
+  const fontInstance = requireFont(context, options.fontFamily);
   const glyph = fontInstance.layout(text);
-  const neoWidth =
-    ((glyph.advanceWidth / fontInstance.unitsPerEm) * fontSize + text.length * options.letterSpacing) *
+
+  return (
+    ((glyph.advanceWidth / fontInstance.unitsPerEm) * options.size + text.length * options.letterSpacing) *
     1.005 *
-    options.scaleX;
-  return neoWidth;
+    options.scaleX
+  );
 };
 
-let getTxtWidth = (text: string, inputOptions: textOptions = {}): number => {
-  if (inputOptions.smallCaps) {
-    const smallCapsSize = (inputOptions.size ?? def.size) * 0.8;
-    const smallCaps =
-      text
-        .match(/[a-zà-ÿ]/g)
-        ?.join("")
-        ?.toUpperCase() || "";
-    const nonSmallCaps = text.replace(/[a-zà-ÿ]/g, "") || "";
+const getTxtWidth = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): number => {
+  const textOptions = inputOptions ?? {};
+  if (textOptions.smallCaps) {
+    const smallCapsSize = (textOptions.size ?? defaultTextOptions.size) * 0.8;
+    const smallCaps = text.match(smallCapsPattern)?.join("")?.toUpperCase() || "";
+    const nonSmallCaps = text.replace(smallCapsPattern, "") || "";
+
     return (
-      calcWidth(smallCaps, { ...inputOptions, size: smallCapsSize }) +
-      calcWidth(nonSmallCaps, inputOptions)
+      calcWidth(smallCaps, { ...textOptions, size: smallCapsSize }, context) +
+      calcWidth(nonSmallCaps, textOptions, context)
     );
   }
-  return calcWidth(text, inputOptions);
-};
-let getTxtHeight = (txt: string, inputOptions: textOptions = {}) => {
-  const options = { ...def, ...inputOptions };
-  let lines = txt.split(/\n/);
-  let n = lines.length;
-  for (let i = 0; i < lines.length; ++i) {
-    let words = lines[i].split(" ");
-    let line = "";
-    for (let x = 0; x < words.length; ++x) {
-      let currentLineWidth = getTxtWidth(line + words[x] + " ", options);
-      if (currentLineWidth < options.width) {
-        line = line + words[x] + " ";
-      } else {
-        n++;
-        line = "";
-        x--;
-      }
-    }
-  }
-  return n * (options.size as number) * (options.lineHeight as number);
-};
-let calculateMaxFont = (txt: string, inputOptions: textOptions = {}): number => {
-  const options = { ...def, ...inputOptions };
-  while (getTxtHeight(txt, options) > options.height) options.size -= 0.5;
-  return options.size;
+
+  return calcWidth(text, textOptions, context);
 };
 
-let calculateMaxScale = (txt: string, inputOptions: textOptions = {}): { scaleX: number; scaleY: number } => {
-  const options = { ...def, ...inputOptions };
-  const width = getTxtWidth(txt, options) + txt.length * options.letterSpacing;
+const wrapLines = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): string[] => {
+  const options = normalizeOptions(inputOptions);
+  const wrappedLines: string[] = [];
+
+  for (const sourceLine of text.split(/\n/)) {
+    let line = "";
+
+    for (const word of sourceLine.split(" ")) {
+      const nextLine = `${line}${word} `;
+      if (line && getTxtWidth(nextLine, options, context) > options.width) {
+        wrappedLines.push(line);
+        line = "";
+      }
+
+      line += `${word} `;
+    }
+
+    wrappedLines.push(line);
+  }
+
+  return wrappedLines;
+};
+
+const getTxtHeight = (text: string, inputOptions: TextOptions | undefined, context: RenderContext) => {
+  const options = normalizeOptions(inputOptions);
+  return wrapLines(text, options, context).length * options.size * options.lineHeight;
+};
+
+const calculateMaxFont = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): number => {
+  const options = normalizeOptions(inputOptions);
+  const floorSize = Math.min(6, options.size);
+  const maxSteps = Math.max(0, Math.ceil((options.size - floorSize) / 0.5));
+  let bestStep = maxSteps;
+
+  let low = 0;
+  let high = maxSteps;
+  while (low <= high) {
+    const step = Math.floor((low + high) / 2);
+    const size = options.size - step * 0.5;
+    const fits = getTxtHeight(text, { ...options, size }, context) <= options.height;
+
+    if (fits) {
+      bestStep = step;
+      high = step - 1;
+    } else {
+      low = step + 1;
+    }
+  }
+
+  return options.size - bestStep * 0.5;
+};
+
+const calculateMaxScale = (
+  text: string,
+  inputOptions: TextOptions | undefined,
+  context: RenderContext
+): { scaleX: number; scaleY: number } => {
+  const options = normalizeOptions(inputOptions);
+  const width = getTxtWidth(text, options, context) + text.length * options.letterSpacing;
   if (width * options.scaleX > options.width) return { scaleX: options.width / width, scaleY: options.scaleY };
   return { scaleX: options.scaleX, scaleY: options.scaleY };
 };
 
-export { calculateMaxFont, calculateMaxScale, getTxtWidth };
+export { calculateMaxFont, calculateMaxScale, getTxtWidth, wrapLines };
