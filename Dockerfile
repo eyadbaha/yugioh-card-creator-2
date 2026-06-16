@@ -12,6 +12,7 @@ FROM deps AS development
 COPY tsconfig.json nodemon.json ./
 COPY src ./src
 COPY styles ./styles
+COPY public ./public
 RUN npm run build
 CMD ["npm", "run", "dev"]
 

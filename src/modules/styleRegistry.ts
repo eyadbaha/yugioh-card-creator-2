@@ -57,6 +57,7 @@ type StyleRegistry = {
 
 type StyleRegistryStore = {
   getStyleRegistry: () => StyleRegistry;
+  reload: () => StyleRegistry;
   close: () => void;
 };
 
@@ -446,8 +447,15 @@ const createStyleRegistryStore = (inputRootDirs?: string | string[]): StyleRegis
     console.log(`Watching styles for changes: ${rootDirs.join(path.delimiter)}`);
   }
 
+  const reload = () => {
+    registry = loadStyleRegistry(rootDirs);
+    if (watchers.length > 0) resetWatchers();
+    return registry;
+  };
+
   return {
     getStyleRegistry: () => registry,
+    reload,
     close: () => {
       if (reloadTimer) clearTimeout(reloadTimer);
       watchers.forEach((watcher) => watcher.close());

@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>YGO Style Studio</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d212b;
+    --border: #2a2f3a;
+    --text: #e6e9ef;
+    --muted: #9aa4b2;
+    --accent: #5b8cff;
+    --accent-2: #3a6df0;
+    --danger: #ff6b6b;
+    --ok: #4cd07d;
+    --radius: 10px;
+    --shadow: 0 6px 24px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--text);
+    background: radial-gradient(1200px 600px at 70% -10%, #1a2030 0%, var(--bg) 55%);
+    display: flex; flex-direction: column;
+  }
+  button {
+    font: inherit; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--border);
+    padding: 7px 12px; border-radius: 8px; cursor: pointer;
+    transition: background .12s, border-color .12s, transform .04s;
+  }
+  button:hover { background: #262c38; border-color: #38415280; }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent-2); border-color: var(--accent); }
+  button.primary:hover { background: var(--accent); }
+  button.ghost { background: transparent; }
+  input, select, textarea {
+    font: inherit; color: var(--text);
+    background: #0e1117; border: 1px solid var(--border);
+    border-radius: 7px; padding: 6px 8px; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 64px; }
+  select { cursor: pointer; }
+  label { color: var(--muted); }
+
+  /* Top bar */
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; background: rgba(20,23,30,.85);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--border); z-index: 5;
+  }
+  .brand { font-weight: 700; letter-spacing: .3px; font-size: 15px; white-space: nowrap; }
+  .brand .dot { color: var(--accent); }
+  .topbar .grow { flex: 1; }
+  .topbar .style-pick { display: flex; align-items: center; gap: 8px; min-width: 230px; }
+  .topbar .style-pick select { min-width: 180px; }
+  #status { font-size: 12px; color: var(--muted); min-width: 90px; text-align: right; }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--danger); }
+
+  /* Layout */
+  .layout { flex: 1; display: flex; min-height: 0; }
+  .sidebar {
+    width: 360px; min-width: 320px; background: var(--panel);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0;
+  }
+  .tabs { display: flex; padding: 8px 8px 0; gap: 4px; border-bottom: 1px solid var(--border); }
+  .tabs button {
+    flex: 1; border: none; background: transparent; border-radius: 8px 8px 0 0;
+    color: var(--muted); padding: 9px; border-bottom: 2px solid transparent;
+  }
+  .tabs button.active { color: var(--text); border-bottom-color: var(--accent); background: var(--panel-2); }
+  .tabpanel { padding: 14px; overflow: auto; flex: 1; min-height: 0; }
+
+  .field { margin-bottom: 11px; }
+  .field > label { display: block; font-size: 12px; margin-bottom: 4px; }
+  .row { display: flex; gap: 8px; }
+  .row > .field { flex: 1; }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+  .check { display: flex; align-items: center; gap: 7px; color: var(--text); }
+  .check input { width: auto; }
+  .hint { color: var(--muted); font-size: 11.5px; margin: 4px 0 12px; }
+  .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 18px 0 8px; }
+
+  /* Auto-generated style form */
+  details.grp { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; background: var(--panel-2); }
+  details.grp > summary {
+    cursor: pointer; padding: 8px 10px; font-weight: 600; list-style: none;
+    color: var(--text); user-select: none; display: flex; align-items: center; gap: 6px;
+  }
+  details.grp > summary::-webkit-details-marker { display: none; }
+  details.grp > summary::before { content: "▸"; color: var(--muted); transition: transform .12s; }
+  details.grp[open] > summary::before { transform: rotate(90deg); }
+  .grp-body { padding: 4px 10px 10px; }
+  .leaf { display: grid; grid-template-columns: 130px 1fr; gap: 8px; align-items: center; margin: 5px 0; }
+  .leaf > label { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .leaf .with-color { display: flex; gap: 6px; }
+  .leaf .with-color input[type=color] { width: 34px; padding: 2px; }
+
+  /* Assets */
+  .asset-group-title { font-size: 12px; color: var(--muted); margin: 14px 0 8px; text-transform: uppercase; letter-spacing: .6px; }
+  .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px,1fr)); gap: 8px; }
+  .asset {
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px; background: var(--panel-2);
+    cursor: pointer; text-align: center; transition: border-color .12s;
+  }
+  .asset:hover { border-color: var(--accent); }
+  .asset .thumb {
+    height: 54px; display: flex; align-items: center; justify-content: center;
+    background: repeating-conic-gradient(#20242e 0% 25%, #181b22 0% 50%) 50% / 14px 14px;
+    border-radius: 5px; overflow: hidden;
+  }
+  .asset .thumb img { max-width: 100%; max-height: 100%; }
+  .asset .name { font-size: 10px; color: var(--muted); margin-top: 4px; word-break: break-all; line-height: 1.2; }
+
+  /* Preview */
+  .preview { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .preview-toolbar {
+    display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+    border-bottom: 1px solid var(--border); background: rgba(20,23,30,.5);
+  }
+  .preview-toolbar .grow { flex: 1; }
+  #renderStatus { font-size: 12px; color: var(--muted); }
+  #renderStatus.err { color: var(--danger); }
+  .split-ctrl { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .split-ctrl input[type=range] { width: 160px; }
+  .stage {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 22px; overflow: auto; min-height: 0;
+  }
+  .compare { position: relative; display: inline-block; line-height: 0; box-shadow: var(--shadow); border-radius: 6px; touch-action: none; user-select: none; }
+  .compare img { -webkit-user-drag: none; user-drag: none; user-select: none; }
+  .compare.has-sample img { pointer-events: none; }
+  #renderedImg { display: block; max-height: calc(100vh - 170px); max-width: 100%; width: auto; height: auto; border-radius: 6px; }
+  #sampleImg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; border-radius: 6px; }
+  .divider {
+    position: absolute; top: 0; bottom: 0; left: 50%; width: 0;
+    border-left: 2px solid rgba(255,255,255,.9); box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+    pointer-events: none;
+  }
+  .divider .handle {
+    position: absolute; top: 50%; left: 0; transform: translate(-50%,-50%);
+    width: 26px; height: 26px; border-radius: 50%; background: #fff; color: #111;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.5);
+  }
+  .compare.has-sample { cursor: ew-resize; }
+  .compare .tag {
+    position: absolute; top: 8px; font-size: 10px; letter-spacing: .5px; text-transform: uppercase;
+    background: rgba(0,0,0,.55); color: #fff; padding: 2px 7px; border-radius: 20px; line-height: 1.4;
+  }
+  .compare .tag.left { left: 8px; }
+  .compare .tag.right { right: 8px; }
+  .compare .tag { pointer-events: none; }
+  .compare:not(.has-sample) .tag { display: none; }
+
+  /* Dialog */
+  dialog {
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    border-radius: var(--radius); padding: 0; box-shadow: var(--shadow); width: 360px;
+  }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  .dialog-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .dialog-body h3 { margin: 0; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  .error { color: var(--danger); font-size: 12px; min-height: 14px; margin: 0; }
+  .empty { color: var(--muted); font-size: 13px; padding: 20px 4px; text-align: center; }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">YGO Style<span class="dot"> ●</span> Studio</div>
+    <div class="style-pick">
+      <label for="styleSelect">Style</label>
+      <select id="styleSelect"></select>
+    </div>
+    <button id="newBtn" class="ghost">+ New</button>
+    <button id="loadZipBtn" class="ghost">Load ZIP</button>
+    <div class="grow"></div>
+    <button id="resetBtn" class="ghost">Reset</button>
+    <button id="saveBtn">Save Style</button>
+    <button id="zipBtn" class="primary">Download ZIP</button>
+    <span id="status"></span>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="tabs">
+        <button data-tab="card" class="active">Card</button>
+        <button data-tab="style">Style</button>
+        <button data-tab="assets">Assets</button>
+      </div>
+      <div class="tabpanel" id="panel-card"></div>
+      <div class="tabpanel" id="panel-style" hidden></div>
+      <div class="tabpanel" id="panel-assets" hidden></div>
+    </aside>
+
+    <section class="preview">
+      <div class="preview-toolbar">
+        <button id="loadArtBtn">Load Art</button>
+        <button id="loadSampleBtn">Load Sample</button>
+        <button id="clearSampleBtn" hidden>Clear Sample</button>
+        <label class="split-ctrl" id="splitCtrl" hidden>
+          Split <input type="range" id="splitRange" min="0" max="100" value="50">
+        </label>
+        <div class="grow"></div>
+        <span id="renderStatus"></span>
+      </div>
+      <div class="stage">
+        <div class="compare" id="compare">
+          <span class="tag left">Sample</span>
+          <span class="tag right">Rendered</span>
+          <img id="renderedImg" alt="rendered card">
+          <img id="sampleImg" hidden alt="sample">
+          <div class="divider" id="divider" hidden><span class="handle">⇆</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <input type="file" id="artFile" accept="image/*" hidden>
+  <input type="file" id="sampleFile" accept="image/*" hidden>
+  <input type="file" id="assetFile" accept="image/png" hidden>
+  <input type="file" id="zipFile" accept=".zip,application/zip,application/x-zip-compressed" hidden>
+
+  <dialog id="newDialog">
+    <form class="dialog-body" method="dialog">
+      <h3>New style</h3>
+      <div class="field">
+        <label>Clone from</label>
+        <select id="newBase"></select>
+      </div>
+      <div class="field">
+        <label>New name</label>
+        <input id="newName" placeholder="my_style" autocomplete="off">
+      </div>
+      <p class="hint">Letters, numbers, hyphen and underscore only. Assets and settings are copied from the chosen style.</p>
+      <p class="error" id="newError"></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost">Cancel</button>
+        <button id="newCreate" class="primary">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+<script>
+"use strict";
+
+const PLACEHOLDER_ART = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGOwcfDAihiGlgQAIuUxAWfiCgMAAAAASUVORK5CYII=";
+
+const ATTRIBUTES = ["LIGHT","DARK","WIND","FIRE","EARTH","WATER","DIVINE","SPELL","TRAP","LAUGH"];
+const TEMPLATES = ["normal","effect","ritual","fusion","synchro","xyz","link","spell","trap","token"];
+const SPELLTRAP_TEMPLATES = ["spell","trap"];
+const ICONS = ["normal","continuous","counter","equip","field","quick-play","ritual"];
+const LINK_ARROWS = ["Top","Top-Right","Right","Bottom-Right","Bottom","Bottom-Left","Left","Top-Left"];
+
+const $ = (sel, root) => (root || document).querySelector(sel);
+
+const state = {
+  styles: [],
+  current: null,            // { type, name }
+  settings: {},             // raw settings being edited
+  assets: { icons: [], template: [] },
+  artBase64: PLACEHOLDER_ART,
+  artLoaded: false,
+  sampleUrl: null,
+  split: 50,
+  card: {
+    name: "Blue-Eyes White Dragon",
+    attribute: "LIGHT",
+    template: "normal",
+    level: 8,
+    scale: 4,
+    monsterType: "[Dragon / Normal]",
+    atk: "3000",
+    def: "2500",
+    maxAtk: "",
+    cardText: "This legendary dragon is a powerful engine of destruction. Virtually invincible, very few have faced this awesome creature and lived to tell the tale.",
+    pendulumText: "",
+    icon: "normal",
+    linkArrows: [],
+    pendulum: false,
+    legend: false,
+    fullArt: false,
+    disableStats: false,
+    overrushName: false,
+  },
+};
+
+let renderTimer = null;
+let rendering = false;
+let renderQueued = false;
+let lastObjectUrl = null;
+
+function setStatus(msg, kind) {
+  const el = $("#status");
+  el.textContent = msg || "";
+  el.className = kind || "";
+}
+function setRenderStatus(msg, isErr) {
+  const el = $("#renderStatus");
+  el.textContent = msg || "";
+  el.className = isErr ? "err" : "";
+}
+
+/* ----------------------------------------------------------------------- API */
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(text || ("HTTP " + res.status));
+  }
+  return res;
+}
+
+async function loadStyleList() {
+  const data = await (await api("/api/editor/styles")).json();
+  state.styles = data.styles || [];
+  const sel = $("#styleSelect");
+  sel.innerHTML = "";
+  for (const s of state.styles) {
+    const opt = document.createElement("option");
+    opt.value = s.type + "/" + s.name;
+    opt.textContent = s.type + " / " + s.name;
+    sel.appendChild(opt);
+  }
+}
+
+async function loadStyle(type, name) {
+  const data = await (await api("/api/editor/styles/" + type + "/" + encodeURIComponent(name))).json();
+  state.current = { type: data.type, name: data.name };
+  state.settings = data.settings || {};
+  state.assets = data.assets || { icons: [], template: [] };
+  $("#styleSelect").value = data.type + "/" + data.name;
+  buildStyleForm();
+  buildAssets();
+  scheduleRender(true);
+}
+
+/* ---------------------------------------------------------------- Card panel */
+function makeField(labelText, inputEl) {
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  const label = document.createElement("label");
+  label.textContent = labelText;
+  wrap.appendChild(label);
+  wrap.appendChild(inputEl);
+  return wrap;
+}
+function makeSelect(options, value, onChange) {
+  const sel = document.createElement("select");
+  for (const o of options) {
+    const opt = document.createElement("option");
+    opt.value = o; opt.textContent = o;
+    sel.appendChild(opt);
+  }
+  sel.value = value;
+  sel.addEventListener("change", () => onChange(sel.value));
+  return sel;
+}
+function makeInput(type, value, onChange) {
+  const inp = document.createElement("input");
+  inp.type = type;
+  inp.value = value;
+  inp.addEventListener("input", () => onChange(inp.value));
+  return inp;
+}
+function makeTextarea(value, onChange) {
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.addEventListener("input", () => onChange(ta.value));
+  return ta;
+}
+function makeCheck(labelText, checked, onChange) {
+  const wrap = document.createElement("label");
+  wrap.className = "check";
+  const inp = document.createElement("input");
+  inp.type = "checkbox"; inp.checked = checked;
+  inp.addEventListener("change", () => onChange(inp.checked));
+  wrap.appendChild(inp);
+  wrap.appendChild(document.createTextNode(labelText));
+  return wrap;
+}
+
+function buildCardPanel() {
+  const p = $("#panel-card");
+  p.innerHTML = "";
+  const c = state.card;
+  const upd = (k) => (v) => { c[k] = v; scheduleRender(); };
+
+  p.appendChild(makeField("Card name", makeInput("text", c.name, upd("name"))));
+
+  const row1 = document.createElement("div"); row1.className = "row";
+  row1.appendChild(makeField("Template", makeSelect(TEMPLATES, c.template, (v) => {
+    c.template = v;
+    normalizeForTemplate();
+    buildCardPanel();
+    scheduleRender();
+  })));
+  row1.appendChild(makeField("Attribute", makeSelect(ATTRIBUTES, c.attribute, upd("attribute"))));
+  p.appendChild(row1);
+
+  const isSpellTrap = SPELLTRAP_TEMPLATES.includes(c.template);
+
+  if (isSpellTrap) {
+    p.appendChild(makeField("Spell/Trap icon", makeSelect(ICONS, c.icon, upd("icon"))));
+  } else {
+    p.appendChild(makeField("Monster type", makeInput("text", c.monsterType, upd("monsterType"))));
+    const row2 = document.createElement("div"); row2.className = "row";
+    row2.appendChild(makeField("Level / Rank (0-13)", makeInput("number", c.level, (v) => { c.level = clampNum(v,0,13); scheduleRender(); })));
+    row2.appendChild(makeField("ATK", makeInput("text", c.atk, upd("atk"))));
+    if (c.template !== "link") row2.appendChild(makeField("DEF", makeInput("text", c.def, upd("def"))));
+    p.appendChild(row2);
+  }
+
+  p.appendChild(makeField(isSpellTrap ? "Card text" : "Monster / effect text", makeTextarea(c.cardText, upd("cardText"))));
+
+  if (!isSpellTrap) {
+    // Pendulum
+    const pendWrap = document.createElement("div"); pendWrap.className = "field";
+    pendWrap.appendChild(makeCheck("Pendulum monster", c.pendulum, (v) => { c.pendulum = v; buildCardPanel(); scheduleRender(); }));
+    p.appendChild(pendWrap);
+    if (c.pendulum) {
+      p.appendChild(makeField("Pendulum scale (0-14)", makeInput("number", c.scale, (v) => { c.scale = clampNum(v,0,14); scheduleRender(); })));
+      p.appendChild(makeField("Pendulum text", makeTextarea(c.pendulumText, upd("pendulumText"))));
+    }
+    if (c.template === "link") {
+      const sec = document.createElement("div");
+      sec.className = "section-title"; sec.textContent = "Link arrows";
+      p.appendChild(sec);
+      const grid = document.createElement("div"); grid.className = "checks";
+      for (const arrow of LINK_ARROWS) {
+        grid.appendChild(makeCheck(arrow, c.linkArrows.includes(arrow), (v) => {
+          if (v) { if (!c.linkArrows.includes(arrow)) c.linkArrows.push(arrow); }
+          else c.linkArrows = c.linkArrows.filter((a) => a !== arrow);
+          scheduleRender();
+        }));
+      }
+      p.appendChild(grid);
+    }
+  }
+
+  // Flags
+  const sec = document.createElement("div");
+  sec.className = "section-title"; sec.textContent = "Options";
+  p.appendChild(sec);
+  const flags = document.createElement("div"); flags.className = "checks";
+  flags.appendChild(makeCheck("Full art", c.fullArt, (v) => { c.fullArt = v; scheduleRender(); }));
+  flags.appendChild(makeCheck("Disable stats", c.disableStats, (v) => { c.disableStats = v; scheduleRender(); }));
+  flags.appendChild(makeCheck("Legend", c.legend, (v) => { c.legend = v; scheduleRender(); }));
+  flags.appendChild(makeCheck("Over-Rush name", c.overrushName, (v) => { c.overrushName = v; scheduleRender(); }));
+  p.appendChild(flags);
+
+  if (!isSpellTrap && (c.template !== "link")) {
+    const r = document.createElement("div"); r.className = "row";
+    r.appendChild(makeField("Max ATK (Rush)", makeInput("text", c.maxAtk, upd("maxAtk"))));
+    p.appendChild(r);
+  }
+
+  if (!state.artLoaded) {
+    const note = document.createElement("p");
+    note.className = "hint";
+    note.textContent = "Using placeholder art — click “Load Art” to preview with your own image.";
+    p.appendChild(note);
+  }
+}
+
+function clampNum(v, lo, hi) {
+  let n = parseInt(v, 10);
+  if (!Number.isFinite(n)) n = 0;
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function normalizeForTemplate() {
+  const c = state.card;
+  if (c.template === "spell") { if (!["SPELL"].includes(c.attribute)) c.attribute = "SPELL"; }
+  else if (c.template === "trap") { if (!["TRAP"].includes(c.attribute)) c.attribute = "TRAP"; }
+  else if (c.attribute === "SPELL" || c.attribute === "TRAP") { c.attribute = "LIGHT"; }
+}
+
+/* --------------------------------------------------------------- Style form */
+function setByPath(obj, keys, value) {
+  let cur = obj;
+  for (let i = 0; i < keys.length - 1; i++) cur = cur[keys[i]];
+  cur[keys[keys.length - 1]] = value;
+}
+
+function buildStyleForm() {
+  const p = $("#panel-style");
+  p.innerHTML = "";
+  if (!state.settings || typeof state.settings !== "object") {
+    p.innerHTML = '<p class="empty">No settings loaded.</p>';
+    return;
+  }
+  const intro = document.createElement("p");
+  intro.className = "hint";
+  intro.textContent = "Edit any value to update the preview live. Use Save Style to write changes to disk.";
+  p.appendChild(intro);
+
+  for (const key of Object.keys(state.settings)) {
+    if (key === "styleName") continue;
+    p.appendChild(renderNode(key, state.settings[key], [key]));
+  }
+}
+
+function renderNode(key, value, keys) {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const details = document.createElement("details");
+    details.className = "grp";
+    if (keys.length === 1) details.open = false;
+    const summary = document.createElement("summary");
+    summary.textContent = key;
+    details.appendChild(summary);
+    const body = document.createElement("div");
+    body.className = "grp-body";
+    for (const childKey of Object.keys(value)) {
+      body.appendChild(renderNode(childKey, value[childKey], keys.concat(childKey)));
+    }
+    details.appendChild(body);
+    return details;
+  }
+  return renderLeaf(key, value, keys);
+}
+
+function renderLeaf(key, value, keys) {
+  const row = document.createElement("div");
+  row.className = "leaf";
+  const label = document.createElement("label");
+  label.textContent = key;
+  label.title = keys.join(".");
+  row.appendChild(label);
+
+  if (typeof value === "boolean") {
+    const inp = document.createElement("input");
+    inp.type = "checkbox"; inp.checked = value; inp.style.width = "auto";
+    inp.addEventListener("change", () => { setByPath(state.settings, keys, inp.checked); scheduleRender(); });
+    row.appendChild(inp);
+  } else if (typeof value === "number") {
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.step = "any"; inp.value = value;
+    inp.addEventListener("input", () => {
+      const n = parseFloat(inp.value);
+      if (Number.isFinite(n)) { setByPath(state.settings, keys, n); scheduleRender(); }
+    });
+    row.appendChild(inp);
+  } else if (Array.isArray(value)) {
+    const ta = document.createElement("textarea");
+    ta.value = JSON.stringify(value);
+    ta.addEventListener("input", () => {
+      try { setByPath(state.settings, keys, JSON.parse(ta.value)); ta.style.borderColor = ""; scheduleRender(); }
+      catch { ta.style.borderColor = "var(--danger)"; }
+    });
+    row.appendChild(ta);
+  } else {
+    const lower = key.toLowerCase();
+    if (lower.includes("color") || lower.includes("background")) {
+      const wrap = document.createElement("div");
+      wrap.className = "with-color";
+      const text = document.createElement("input");
+      text.type = "text"; text.value = value;
+      const color = document.createElement("input");
+      color.type = "color";
+      try { if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) color.value = value; } catch (e) {}
+      text.addEventListener("input", () => { setByPath(state.settings, keys, text.value); scheduleRender(); });
+      color.addEventListener("input", () => { text.value = color.value; setByPath(state.settings, keys, color.value); scheduleRender(); });
+      wrap.appendChild(text); wrap.appendChild(color);
+      row.appendChild(wrap);
+    } else {
+      const inp = document.createElement("input");
+      inp.type = "text"; inp.value = value;
+      inp.addEventListener("input", () => { setByPath(state.settings, keys, inp.value); scheduleRender(); });
+      row.appendChild(inp);
+    }
+  }
+  return row;
+}
+
+/* ------------------------------------------------------------------- Assets */
+function buildAssets() {
+  const p = $("#panel-assets");
+  p.innerHTML = "";
+  const intro = document.createElement("p");
+  intro.className = "hint";
+  intro.textContent = "Click any asset to replace it with a PNG. Changes are written to disk and reloaded.";
+  p.appendChild(intro);
+
+  for (const area of ["template", "icons"]) {
+    const title = document.createElement("div");
+    title.className = "asset-group-title";
+    title.textContent = area + " (" + (state.assets[area] || []).length + ")";
+    p.appendChild(title);
+    const grid = document.createElement("div");
+    grid.className = "asset-grid";
+    for (const file of state.assets[area] || []) {
+      grid.appendChild(makeAssetCell(area, file));
+    }
+    p.appendChild(grid);
+  }
+}
+
+function makeAssetCell(area, file) {
+  const cell = document.createElement("div");
+  cell.className = "asset";
+  cell.title = "Replace " + area + "/" + file;
+  const thumb = document.createElement("div");
+  thumb.className = "thumb";
+  const img = document.createElement("img");
+  img.src = assetUrl(area, file);
+  img.loading = "lazy";
+  thumb.appendChild(img);
+  const name = document.createElement("div");
+  name.className = "name";
+  name.textContent = file;
+  cell.appendChild(thumb);
+  cell.appendChild(name);
+  cell.addEventListener("click", () => replaceAsset(area, file, img));
+  return cell;
+}
+
+function assetUrl(area, file, bust) {
+  const c = state.current;
+  return "/api/editor/styles/" + c.type + "/" + encodeURIComponent(c.name) + "/asset/" + area + "/" + encodeURIComponent(file) + (bust ? ("?t=" + bust) : "");
+}
+
+function replaceAsset(area, file, imgEl) {
+  const input = $("#assetFile");
+  input.value = "";
+  input.onchange = async () => {
+    const f = input.files[0];
+    if (!f) return;
+    try {
+      const dataUrl = await readFileAsDataUrl(f);
+      const base64 = dataUrl.split(",")[1];
+      setStatus("Uploading " + file + "…");
+      await api(assetUrl(area, file), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: base64 }),
+      });
+      imgEl.src = assetUrl(area, file, Date.now());
+      setStatus("Replaced " + file, "ok");
+      scheduleRender(true);
+    } catch (e) {
+      setStatus(String(e.message || e), "err");
+    }
+  };
+  input.click();
+}
+
+/* ------------------------------------------------------------------- Render */
+function buildCardPayload() {
+  const c = state.card;
+  const isSpellTrap = SPELLTRAP_TEMPLATES.includes(c.template);
+  const card = {
+    name: c.name || "",
+    attribute: c.attribute,
+    template: c.template,
+    cardText: c.cardText || "",
+    art: state.artBase64,
+    icon: c.icon || "normal",
+    pendulum: !isSpellTrap && !!c.pendulum,
+  };
+  if (!isSpellTrap) {
+    if (c.monsterType && c.monsterType.trim()) card.monsterType = c.monsterType.trim();
+    if (Number(c.level) > 0) card.level = Number(c.level);
+    if (c.atk !== "" && c.atk != null) card.atk = String(c.atk);
+    if (c.template !== "link" && c.def !== "" && c.def != null) card.def = String(c.def);
+    if (c.maxAtk !== "" && c.maxAtk != null) card.maxAtk = String(c.maxAtk);
+    if (card.pendulum) card.scale = Number(c.scale) || 0;
+    if (card.pendulum && c.pendulumText) card.pendulumText = c.pendulumText;
+    if (c.template === "link" && c.linkArrows.length) card.linkArrows = c.linkArrows.slice();
+  }
+  if (c.legend) card.legend = true;
+  if (c.fullArt) card.fullArt = true;
+  if (c.disableStats) card.disableStats = true;
+  if (c.overrushName) card.overrushName = true;
+  return card;
+}
+
+function scheduleRender(immediate) {
+  if (!state.current) return;
+  if (renderTimer) clearTimeout(renderTimer);
+  renderTimer = setTimeout(doRender, immediate ? 0 : 220);
+}
+
+async function doRender() {
+  if (!state.current) return;
+  if (rendering) { renderQueued = true; return; }
+  rendering = true;
+  setRenderStatus("Rendering…");
+  try {
+    const body = {
+      type: state.current.type,
+      style: state.current.name,
+      settings: state.settings,
+      card: buildCardPayload(),
+    };
+    const res = await api("/api/editor/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const img = $("#renderedImg");
+    img.onload = () => { if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl); lastObjectUrl = url; };
+    img.src = url;
+    setRenderStatus("");
+  } catch (e) {
+    setRenderStatus(String(e.message || e), true);
+  } finally {
+    rendering = false;
+    if (renderQueued) { renderQueued = false; doRender(); }
+  }
+}
+
+/* -------------------------------------------------------------- Split slider */
+function setSplit(pct) {
+  pct = Math.max(0, Math.min(100, pct));
+  state.split = pct;
+  $("#sampleImg").style.clipPath = "inset(0 " + (100 - pct) + "% 0 0)";
+  $("#divider").style.left = pct + "%";
+  $("#splitRange").value = pct;
+}
+function initSplitDrag() {
+  const compare = $("#compare");
+  let dragging = false;
+  const update = (e) => {
+    const r = compare.getBoundingClientRect();
+    setSplit(((e.clientX - r.left) / r.width) * 100);
+  };
+  compare.addEventListener("pointerdown", (e) => {
+    if ($("#sampleImg").hidden) return;
+    e.preventDefault();
+    dragging = true;
+    try { compare.setPointerCapture(e.pointerId); } catch (err) {}
+    update(e);
+  });
+  compare.addEventListener("pointermove", (e) => { if (dragging) { e.preventDefault(); update(e); } });
+  compare.addEventListener("pointerup", () => { dragging = false; });
+  compare.addEventListener("pointercancel", () => { dragging = false; });
+  compare.addEventListener("dragstart", (e) => e.preventDefault());
+  $("#splitRange").addEventListener("input", (e) => setSplit(Number(e.target.value)));
+}
+
+/* -------------------------------------------------------------------- Files */
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
+}
+
+/* ------------------------------------------------------------------- Wiring */
+function bindTabs() {
+  document.querySelectorAll(".tabs button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b === btn));
+      ["card","style","assets"].forEach((t) => { $("#panel-" + t).hidden = (t !== btn.dataset.tab); });
+    });
+  });
+}
+
+function bindToolbar() {
+  $("#styleSelect").addEventListener("change", async (e) => {
+    const [type, name] = e.target.value.split("/");
+    try { await loadStyle(type, name); setStatus(""); }
+    catch (err) { setStatus(String(err.message || err), "err"); }
+  });
+
+  $("#resetBtn").addEventListener("click", async () => {
+    if (!state.current) return;
+    try { await loadStyle(state.current.type, state.current.name); setStatus("Reset to saved", "ok"); }
+    catch (err) { setStatus(String(err.message || err), "err"); }
+  });
+
+  $("#saveBtn").addEventListener("click", async () => {
+    if (!state.current) return;
+    setStatus("Saving…");
+    try {
+      await api("/api/editor/styles/" + state.current.type + "/" + encodeURIComponent(state.current.name), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(state.settings),
+      });
+      setStatus("Saved", "ok");
+    } catch (err) { setStatus(String(err.message || err), "err"); }
+  });
+
+  $("#zipBtn").addEventListener("click", () => {
+    if (!state.current) return;
+    const a = document.createElement("a");
+    a.href = "/api/editor/styles/" + state.current.type + "/" + encodeURIComponent(state.current.name) + "/zip";
+    a.download = state.current.name + ".zip";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+
+  $("#loadZipBtn").addEventListener("click", () => $("#zipFile").click());
+  $("#zipFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setStatus("Importing " + f.name + "…");
+    try {
+      const dataUrl = await readFileAsDataUrl(f);
+      const base64 = dataUrl.split(",")[1];
+      const imported = await (await api("/api/editor/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: base64 }),
+      })).json();
+      await loadStyleList();
+      await loadStyle(imported.type, imported.name);
+      setStatus((imported.overrode ? "Overrode " : "Imported ") + imported.type + "/" + imported.name, "ok");
+    } catch (err) {
+      setStatus(String(err.message || err), "err");
+    } finally {
+      e.target.value = "";
+    }
+  });
+
+  // Art / sample loaders
+  $("#loadArtBtn").addEventListener("click", () => $("#artFile").click());
+  $("#artFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const dataUrl = await readFileAsDataUrl(f);
+    state.artBase64 = dataUrl.split(",")[1];
+    state.artLoaded = true;
+    buildCardPanel();
+    scheduleRender(true);
+  });
+
+  $("#loadSampleBtn").addEventListener("click", () => $("#sampleFile").click());
+  $("#sampleFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const dataUrl = await readFileAsDataUrl(f);
+    if (state.sampleUrl) { /* dataUrl, nothing to revoke */ }
+    state.sampleUrl = dataUrl;
+    const sampleImg = $("#sampleImg");
+    sampleImg.src = dataUrl;
+    sampleImg.hidden = false;
+    $("#divider").hidden = false;
+    $("#splitCtrl").hidden = false;
+    $("#clearSampleBtn").hidden = false;
+    $("#compare").classList.add("has-sample");
+    setSplit(state.split);
+  });
+
+  $("#clearSampleBtn").addEventListener("click", () => {
+    state.sampleUrl = null;
+    $("#sampleImg").hidden = true;
+    $("#sampleImg").removeAttribute("src");
+    $("#divider").hidden = true;
+    $("#splitCtrl").hidden = true;
+    $("#clearSampleBtn").hidden = true;
+    $("#compare").classList.remove("has-sample");
+  });
+}
+
+function bindNewDialog() {
+  const dlg = $("#newDialog");
+  $("#newBtn").addEventListener("click", () => {
+    const base = $("#newBase");
+    base.innerHTML = "";
+    for (const s of state.styles) {
+      const opt = document.createElement("option");
+      opt.value = s.type + "/" + s.name;
+      opt.textContent = s.type + " / " + s.name;
+      base.appendChild(opt);
+    }
+    if (state.current) base.value = state.current.type + "/" + state.current.name;
+    $("#newName").value = "";
+    $("#newError").textContent = "";
+    dlg.showModal();
+  });
+
+  $("#newCreate").addEventListener("click", async (e) => {
+    e.preventDefault();
+    const [type, name] = $("#newBase").value.split("/");
+    const newName = $("#newName").value.trim();
+    if (!/^[A-Za-z0-9_-]+$/.test(newName)) {
+      $("#newError").textContent = "Name must use only letters, numbers, hyphen and underscore.";
+      return;
+    }
+    try {
+      const created = await (await api("/api/editor/styles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName, from: { type, name } }),
+      })).json();
+      dlg.close();
+      await loadStyleList();
+      await loadStyle(created.type, created.name);
+      setStatus("Created " + created.type + "/" + created.name, "ok");
+    } catch (err) {
+      $("#newError").textContent = String(err.message || err);
+    }
+  });
+}
+
+/* --------------------------------------------------------------------- Boot */
+async function boot() {
+  bindTabs();
+  bindToolbar();
+  bindNewDialog();
+  initSplitDrag();
+  buildCardPanel();
+  try {
+    await loadStyleList();
+    if (state.styles.length === 0) { setStatus("No styles found", "err"); return; }
+    await loadStyle(state.styles[0].type, state.styles[0].name);
+  } catch (err) {
+    setStatus(String(err.message || err), "err");
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

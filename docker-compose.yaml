@@ -12,7 +12,7 @@ services:
       - "5000:8080"
     volumes:
       - ./src:/var/task/src
-      - ./styles:/var/task/styles
+      - ./public:/var/task/public
     environment:
       STYLES_DIR: /var/task/styles
     env_file:
