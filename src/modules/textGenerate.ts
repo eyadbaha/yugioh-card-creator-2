@@ -8,6 +8,11 @@ type TextLineOptions = generateOptions & {
   textBoxWidth?: number;
 };
 
+type TextOverflowPadding = {
+  right: number;
+  bottom: number;
+};
+
 const escape = (value: string | number): string | number => {
   if (typeof value !== "string") return value;
 
@@ -29,7 +34,23 @@ const smallCapsConvert = (inputText: string, options: generateOptions, strokeDel
     }">${match.toUpperCase()}</tspan>`;
   });
 
-const createDefs = (options: generateOptions, context: RenderContext) => {
+const getMaxPaintStrokeWidth = (options: generateOptions) =>
+  Math.max(
+    options.stroke || 0,
+    options.outline ? options.outline.width + (options.stroke || 0) : 0,
+    options.overrush && options.smallCaps ? (options.stroke || 0) + 2 : 0
+  );
+
+const getTextOverflowPadding = (options: generateOptions): TextOverflowPadding => {
+  const strokeWidth = getMaxPaintStrokeWidth(options);
+
+  return {
+    right: Math.ceil(Math.max(4, strokeWidth + options.size * 0.1)),
+    bottom: Math.ceil(Math.max(4, strokeWidth + options.size * options.scaleY * 0.45)),
+  };
+};
+
+const createDefs = (options: generateOptions, context: RenderContext, svgWidth: number, svgHeight: number) => {
   if (!options.overrush) return "";
 
   const shadowFilter = options.smallCaps
@@ -44,8 +65,8 @@ const createDefs = (options: generateOptions, context: RenderContext) => {
     : "";
 
   return `<defs>
-      <pattern id="bgimg" x="0" y="0" width="100%" height="100%" patternUnits="userSpaceOnUse">
-        <image x="0" y="10" height="38" preserveAspectRatio="xMidYMid slice" href="${context.generalAssets.overRushCoverDataUri}" />
+      <pattern id="bgimg" x="0" y="0" width="${svgWidth}" height="${svgHeight}" patternUnits="userSpaceOnUse">
+        <image x="0" y="0" width="${svgWidth}" height="${svgHeight}" preserveAspectRatio="xMidYMid slice" href="${context.generalAssets.overRushCoverDataUri}" />
       </pattern>
       ${shadowFilter}
     </defs>`;
@@ -67,11 +88,18 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
   const options = { ...defaultOptions, ...inputOptions };
   const textBoxWidth = options.textBoxWidth ?? options.width;
   const y = Math.ceil(options.size as number);
+  const padding = getTextOverflowPadding(options);
+  const baseSvgWidth = Math.ceil(options.width as number);
+  const baseSvgHeight = Math.ceil(options.height as number) + 20;
+  const svgWidth = baseSvgWidth + padding.right;
+  const svgHeight = Math.max(baseSvgHeight, Math.ceil(y + padding.bottom));
   const position =
     options.align === "center"
       ? `x="${Math.ceil(textBoxWidth / 2)}" y="${y}" dominant-baseline="middle" text-anchor="middle"`
       : `x="0" y="${y}"`;
-  const background = options.background ? `<rect width="100%" height="100%" fill="${options.background}" />` : "";
+  const background = options.background
+    ? `<rect width="${baseSvgWidth}" height="${baseSvgHeight}" fill="${options.background}" />`
+    : "";
   let textWithStroke = "";
 
   if (options.smallCaps) {
@@ -93,8 +121,8 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
     : "";
 
   const svgString = `
-    <svg width="${Math.ceil(options.width as number)}" height="${Math.ceil(options.height as number) + 20}">
-      ${createDefs(options, context)}
+    <svg width="${svgWidth}" height="${svgHeight}">
+      ${createDefs(options, context, svgWidth, svgHeight)}
       <g transform="translate(${options.offsetX}, 0)">
         <g transform="scale(${options.scaleX}, ${options.scaleY})">
           ${outline}
