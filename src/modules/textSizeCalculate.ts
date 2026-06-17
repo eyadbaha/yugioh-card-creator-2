@@ -3,6 +3,18 @@ import type { generateOptions } from "./types.js";
 
 type TextOptions = Partial<generateOptions>;
 
+type TextLineBounds = {
+  top: number;
+  bottom: number;
+};
+
+type TextBlockLayout = {
+  lines: string[];
+  lineHeight: number;
+  baselineY: number;
+  height: number;
+};
+
 const defaultTextOptions = {
   fontFamily: "MatrixBold",
   size: 20,
@@ -16,6 +28,7 @@ const defaultTextOptions = {
 };
 
 const DEFAULT_SMALL_CAPS_SCALE = 0.8;
+const FONT_FIT_PRECISION = 0.1;
 
 const normalizeOptions = (inputOptions: TextOptions = {}) => ({
   ...defaultTextOptions,
@@ -68,6 +81,44 @@ const calcWidthWithLetterSpacing = (
 const calcWidth = (text: string, inputOptions: TextOptions, context: RenderContext): number =>
   calcWidthWithLetterSpacing(text, inputOptions, context);
 
+const mergeBounds = (bounds: TextLineBounds[]): TextLineBounds => {
+  const populated = bounds.filter((bound) => Number.isFinite(bound.top) && Number.isFinite(bound.bottom));
+  if (populated.length === 0) return { top: 0, bottom: 0 };
+
+  return {
+    top: Math.min(...populated.map((bound) => bound.top)),
+    bottom: Math.max(...populated.map((bound) => bound.bottom)),
+  };
+};
+
+const getFontFallbackBounds = (options: TextOptions, context: RenderContext): TextLineBounds => {
+  const normalized = normalizeOptions(options);
+  const fontInstance = requireFont(context, normalized.fontFamily);
+  const scale = normalized.size / fontInstance.unitsPerEm;
+
+  return {
+    top: -fontInstance.ascent * scale,
+    bottom: Math.abs(fontInstance.descent) * scale,
+  };
+};
+
+const getLineBoundsForOptions = (text: string, inputOptions: TextOptions, context: RenderContext): TextLineBounds => {
+  if (!text) return getFontFallbackBounds(inputOptions, context);
+
+  const options = normalizeOptions(inputOptions);
+  const fontInstance = requireFont(context, options.fontFamily);
+  const glyphRun = fontInstance.layout(text) as { bbox?: { minY: number; maxY: number } };
+  const bbox = glyphRun.bbox;
+
+  if (!bbox) return getFontFallbackBounds(options, context);
+
+  const scale = options.size / fontInstance.unitsPerEm;
+  return {
+    top: -bbox.maxY * scale,
+    bottom: -bbox.minY * scale,
+  };
+};
+
 const hasBracketStyles = (textOptions: TextOptions) =>
   Boolean(textOptions.brackets?.fontFamily || textOptions.brackets?.size !== undefined);
 
@@ -117,6 +168,39 @@ const getTxtWidthWithoutBracketStyles = (
   return calcWidth(text, textOptions, context);
 };
 
+const getLineBoundsWithoutBracketStyles = (
+  text: string,
+  textOptions: TextOptions,
+  context: RenderContext
+): TextLineBounds => {
+  if (shouldApplySmallCaps(textOptions)) {
+    const smallCapsSize = (textOptions.size ?? defaultTextOptions.size) * getSmallCapsScale(textOptions);
+    const runs: { text: string; smallCaps: boolean }[] = [];
+
+    for (const char of text) {
+      const smallCaps = isSmallCapsCharacter(char);
+      const previousRun = runs[runs.length - 1];
+      if (previousRun?.smallCaps === smallCaps) {
+        previousRun.text += char;
+      } else {
+        runs.push({ text: char, smallCaps });
+      }
+    }
+
+    return mergeBounds(
+      runs.map((run) =>
+        getLineBoundsForOptions(
+          run.smallCaps ? run.text.toUpperCase() : run.text,
+          run.smallCaps ? { ...textOptions, size: smallCapsSize } : textOptions,
+          context
+        )
+      )
+    );
+  }
+
+  return getLineBoundsForOptions(text, textOptions, context);
+};
+
 const getTxtWidth = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): number => {
   const textOptions = inputOptions ?? {};
 
@@ -138,6 +222,30 @@ const getTxtWidth = (text: string, inputOptions: TextOptions | undefined, contex
   }
 
   return getTxtWidthWithoutBracketStyles(text, textOptions, context);
+};
+
+const getLineBounds = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): TextLineBounds => {
+  const textOptions = inputOptions ?? {};
+
+  if (hasBracketStyles(textOptions) && /[\[\]]/.test(text)) {
+    const bounds: TextLineBounds[] = [];
+    let textRun = "";
+
+    for (const char of text) {
+      if (char === "[" || char === "]") {
+        if (textRun) bounds.push(getLineBoundsWithoutBracketStyles(textRun, textOptions, context));
+        bounds.push(getLineBoundsForOptions(char, bracketTextOptions(textOptions), context));
+        textRun = "";
+      } else {
+        textRun += char;
+      }
+    }
+
+    if (textRun) bounds.push(getLineBoundsWithoutBracketStyles(textRun, textOptions, context));
+    return mergeBounds(bounds);
+  }
+
+  return getLineBoundsWithoutBracketStyles(text, textOptions, context);
 };
 
 const wrapLines = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): string[] => {
@@ -163,33 +271,106 @@ const wrapLines = (text: string, inputOptions: TextOptions | undefined, context:
   return wrappedLines;
 };
 
-const getTxtHeight = (text: string, inputOptions: TextOptions | undefined, context: RenderContext) => {
+const getRenderedScaleY = (options: TextOptions) => Math.abs(options.scaleY || defaultTextOptions.scaleY);
+
+const getTextBlockBounds = (
+  lines: string[],
+  inputOptions: TextOptions | undefined,
+  context: RenderContext,
+  lineHeightOverride?: number
+): TextLineBounds => {
   const options = normalizeOptions(inputOptions);
-  return wrapLines(text, options, context).length * options.size * options.lineHeight;
+  const lineHeight = lineHeightOverride ?? options.lineHeight;
+  const lineAdvance = options.size * lineHeight;
+
+  return lines.reduce<TextLineBounds>(
+    (bounds, line, index) => {
+      const lineBounds = getLineBounds(line, options, context);
+      const baseline = index * lineAdvance;
+
+      return {
+        top: Math.min(bounds.top, baseline + lineBounds.top),
+        bottom: Math.max(bounds.bottom, baseline + lineBounds.bottom),
+      };
+    },
+    { top: Number.POSITIVE_INFINITY, bottom: Number.NEGATIVE_INFINITY }
+  );
+};
+
+const getTextBlockHeight = (
+  text: string,
+  inputOptions: TextOptions | undefined,
+  context: RenderContext,
+  lineHeightOverride?: number
+) => {
+  const options = normalizeOptions(inputOptions);
+  const lines = wrapLines(text, options, context);
+  const bounds = getTextBlockBounds(lines, options, context, lineHeightOverride);
+  return (bounds.bottom - bounds.top) * getRenderedScaleY(options);
+};
+
+const getTxtHeight = (text: string, inputOptions: TextOptions | undefined, context: RenderContext) => {
+  return getTextBlockHeight(text, inputOptions, context);
 };
 
 const calculateMaxFont = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): number => {
   const options = normalizeOptions(inputOptions);
   const floorSize = Math.min(6, options.size);
-  const maxSteps = Math.max(0, Math.ceil((options.size - floorSize) / 0.5));
-  let bestStep = maxSteps;
+  let bestSize = floorSize;
 
-  let low = 0;
-  let high = maxSteps;
-  while (low <= high) {
-    const step = Math.floor((low + high) / 2);
-    const size = options.size - step * 0.5;
+  let low = floorSize;
+  let high = options.size;
+  for (let index = 0; index < 24; index += 1) {
+    const size = (low + high) / 2;
     const fits = getTxtHeight(text, { ...options, size }, context) <= options.height;
 
     if (fits) {
-      bestStep = step;
-      high = step - 1;
+      bestSize = size;
+      low = size;
     } else {
-      low = step + 1;
+      high = size;
     }
   }
 
-  return options.size - bestStep * 0.5;
+  return Number((Math.floor((bestSize + 1e-6) / FONT_FIT_PRECISION) * FONT_FIT_PRECISION).toFixed(3));
+};
+
+const getFittedTextBlockLayout = (
+  text: string,
+  inputOptions: TextOptions | undefined,
+  context: RenderContext
+): TextBlockLayout => {
+  const options = normalizeOptions(inputOptions);
+  const lines = wrapLines(text, options, context);
+  let lineHeight = options.lineHeight;
+  let bounds = getTextBlockBounds(lines, options, context, lineHeight);
+  const targetHeight = options.height / getRenderedScaleY(options);
+
+  if (inputOptions?.lineHeight === undefined && lines.length > 1 && bounds.bottom - bounds.top > 0) {
+    let low = 0.1;
+    let high = Math.max(lineHeight, targetHeight / options.size + 1);
+
+    for (let index = 0; index < 24; index += 1) {
+      const nextLineHeight = (low + high) / 2;
+      const nextBounds = getTextBlockBounds(lines, options, context, nextLineHeight);
+      const nextHeight = nextBounds.bottom - nextBounds.top;
+
+      if (nextHeight <= targetHeight) {
+        lineHeight = nextLineHeight;
+        bounds = nextBounds;
+        low = nextLineHeight;
+      } else {
+        high = nextLineHeight;
+      }
+    }
+  }
+
+  return {
+    lines,
+    lineHeight,
+    baselineY: -bounds.top,
+    height: (bounds.bottom - bounds.top) * getRenderedScaleY(options),
+  };
 };
 
 const calculateMaxScale = (
@@ -203,4 +384,4 @@ const calculateMaxScale = (
   return { scaleX: options.scaleX, scaleY: options.scaleY };
 };
 
-export { calculateMaxFont, calculateMaxScale, getTxtWidth, wrapLines };
+export { calculateMaxFont, calculateMaxScale, getFittedTextBlockLayout, getTxtWidth, wrapLines };

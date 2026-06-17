@@ -1,11 +1,12 @@
 import sharp from "sharp";
 import type { RenderContext } from "./renderContext.js";
-import { calculateMaxFont, getTxtWidth, wrapLines } from "./textSizeCalculate.js";
+import { calculateMaxFont, getFittedTextBlockLayout, getTxtWidth } from "./textSizeCalculate.js";
 import type { generateOptions } from "./types.js";
 
 type TextLineOptions = generateOptions & {
   offsetX?: number;
   textBoxWidth?: number;
+  baselineY?: number;
 };
 
 type TextOverflowPadding = {
@@ -248,7 +249,7 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
   };
   const options = { ...defaultOptions, ...inputOptions };
   const textBoxWidth = options.textBoxWidth ?? options.width;
-  const y = Math.ceil(options.size as number);
+  const y = options.baselineY ?? Math.ceil(options.size as number);
   const padding = getTextOverflowPadding(options);
   const baseSvgWidth = Math.ceil(options.width as number);
   const textBoxHeight = Math.ceil(options.height as number);
@@ -359,11 +360,16 @@ const textGenerate = async (
   }
 
   const options = { ...inputOptions, size: calculateMaxFont(text, inputOptions, context) };
-  const textBuffer = wrapLines(text, options, context)
-    .map((line, index) => `<tspan x="0" dy="${index === 0 ? "0" : "1em"}">${escape(line)}</tspan>`)
+  const layout = getFittedTextBlockLayout(text, options, context);
+  const textBuffer = layout.lines
+    .map((line, index) => `<tspan x="0" dy="${index === 0 ? "0" : `${layout.lineHeight}em`}">${escape(line)}</tspan>`)
     .join("");
 
-  return createTextLineBuffer(textBuffer, options, context);
+  return createTextLineBuffer(
+    textBuffer,
+    { ...options, baselineY: layout.baselineY, lineHeight: layout.lineHeight },
+    context
+  );
 };
 
 export { textGenerate };
