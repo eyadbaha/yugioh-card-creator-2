@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import z from "zod";
 import { CardArtLoadError } from "../cardArt.js";
 import { cardGenerate, rushCardGenerate } from "../cardGenerate.js";
+import { collectFontFiles } from "../initiateFontsMetrics.js";
 import { rushStyleAssetRequirements } from "../rushStyleApplier.js";
 import { standardStyleAssetRequirements } from "../standardStyleApplier.js";
 import type { LoadedStyle, LoadedStyleAsset, StyleRegistry, StyleRegistryStore, StyleType } from "../styleRegistry.js";
@@ -25,6 +26,14 @@ const isAssetArea = (value: unknown): value is AssetArea =>
   typeof value === "string" && (assetAreas as readonly string[]).includes(value);
 const isValidName = (value: unknown): value is string =>
   typeof value === "string" && styleNameSchema.safeParse(value).success;
+const isSafeFileName = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.length > 0 &&
+  value === path.basename(value) &&
+  !value.startsWith(".") &&
+  !/[<>:"/\\|?*\x00-\x1F]/.test(value);
+const isFontFileName = (value: unknown): value is string => isSafeFileName(value) && /\.(otf|ttf)$/i.test(value);
+const fontFamilyFromFileName = (fileName: string) => fileName.replace(/\.(otf|ttf)$/i, "");
 
 const formatZodError = (error: z.ZodError) =>
   error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`).join("; ");
@@ -145,6 +154,9 @@ const walkDir = (dir: string, base: string, entries: ZipEntry[]) => {
 const getSectionType = (registry: StyleRegistry, section: string): StyleType | undefined =>
   registry.listStyles().find((style) => style.section === section)?.type;
 
+const getLoadedFontNames = (registry: StyleRegistry) =>
+  Object.keys(registry.listStyles()[0]?.renderContext.fontMetrics ?? {}).sort();
+
 const createEditorRouter = (store: StyleRegistryStore): express.Router => {
   const router = express.Router();
   const jsonLarge = express.json({ limit: "80mb" });
@@ -195,6 +207,76 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
         template: [...style.assets.template.keys()].sort(),
       },
     });
+  });
+
+  // --- Upload a font for this style -----------------------------------------
+  router.post("/api/editor/styles/:section/:name/fonts", jsonLarge, (req, res) => {
+    const { section, name } = req.params;
+    if (!isValidName(section) || !isValidName(name)) {
+      res.status(400).send("Invalid style section or name");
+      return;
+    }
+    const style = registry().getStyle(section, name);
+    if (!style) {
+      res.status(404).send("Style not found");
+      return;
+    }
+
+    const fileName = req.body?.file;
+    if (!isFontFileName(fileName)) {
+      res.status(400).send("Font file name must be a safe .ttf or .otf file");
+      return;
+    }
+
+    const data = typeof req.body?.data === "string" ? req.body.data : "";
+    const buffer = Buffer.from(data.replace(/^data:[^,]*,/, ""), "base64");
+    if (buffer.length < 4) {
+      res.status(400).send("Uploaded font file is empty");
+      return;
+    }
+
+    const reg = registry();
+    const fontFamily = fontFamilyFromFileName(fileName);
+    if (getLoadedFontNames(reg).includes(fontFamily)) {
+      res.status(409).send(`Font "${fontFamily}" is already loaded`);
+      return;
+    }
+
+    const fontDirectory = path.join(style.directory, "fonts");
+    const hadFontDirectory = fs.existsSync(fontDirectory);
+    const restartRecommended = collectFontFiles(fontDirectory).length === 0;
+    const targetPath = path.join(fontDirectory, fileName);
+    if (fs.existsSync(targetPath)) {
+      res.status(409).send(`Font file already exists: ${fileName}`);
+      return;
+    }
+
+    try {
+      fs.mkdirSync(fontDirectory, { recursive: true });
+      fs.writeFileSync(targetPath, buffer);
+    } catch (error) {
+      if (!hadFontDirectory) fs.rmSync(fontDirectory, { recursive: true, force: true });
+      res.status(500).send("Could not save font: " + (error as Error).message);
+      return;
+    }
+
+    try {
+      const reloaded = store.reload();
+      const fonts = getLoadedFontNames(reloaded);
+      if (!fonts.includes(fontFamily)) {
+        throw new Error(`Font "${fontFamily}" was saved but did not appear in the registry`);
+      }
+      res.json({ ok: true, file: fileName, font: fontFamily, fonts, restartRecommended });
+    } catch (error) {
+      fs.rmSync(targetPath, { force: true });
+      if (!hadFontDirectory) fs.rmSync(fontDirectory, { recursive: true, force: true });
+      try {
+        store.reload();
+      } catch (rollbackError) {
+        console.error("Failed to reload registry after removing rejected font:", rollbackError);
+      }
+      res.status(400).send("Font could not be loaded: " + (error as Error).message);
+    }
   });
 
   // --- Asset preview ---------------------------------------------------------

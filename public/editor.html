@@ -132,6 +132,15 @@
   }
   .asset .thumb img { max-width: 100%; max-height: 100%; }
   .asset .name { font-size: 10px; color: var(--muted); margin-top: 4px; word-break: break-all; line-height: 1.2; }
+  .font-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .font-tools button { flex: none; }
+  .font-count { color: var(--muted); font-size: 12px; }
+  .font-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 118px; overflow: auto; margin-bottom: 14px; }
+  .font-chip {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px;
+    background: var(--panel-2); color: var(--muted); font-size: 11px;
+  }
 
   /* Preview */
   .preview { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -246,6 +255,7 @@
   <input type="file" id="artFile" accept="image/*" hidden>
   <input type="file" id="sampleFile" accept="image/*" hidden>
   <input type="file" id="assetFile" accept="image/png" hidden>
+  <input type="file" id="fontFile" accept=".ttf,.otf,font/ttf,font/otf,application/x-font-ttf,application/x-font-otf" hidden>
   <input type="file" id="zipFile" accept=".zip,application/zip,application/x-zip-compressed" hidden>
 
   <dialog id="newDialog">
@@ -1008,6 +1018,7 @@ function buildAssets() {
   intro.className = "hint";
   intro.textContent = "Click any asset to stage a replacement PNG. Use Save Style to write staged assets to disk.";
   p.appendChild(intro);
+  buildFontTools(p);
 
   for (const area of ["template", "icons"]) {
     const title = document.createElement("div");
@@ -1021,6 +1032,43 @@ function buildAssets() {
     }
     p.appendChild(grid);
   }
+}
+
+function buildFontTools(parent) {
+  const title = document.createElement("div");
+  title.className = "asset-group-title";
+  title.textContent = "fonts (" + (state.fonts || []).length + ")";
+  parent.appendChild(title);
+
+  const tools = document.createElement("div");
+  tools.className = "font-tools";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Load Font";
+  button.addEventListener("click", chooseFontFile);
+  const count = document.createElement("span");
+  count.className = "font-count";
+  count.textContent = "TTF or OTF";
+  tools.appendChild(button);
+  tools.appendChild(count);
+  parent.appendChild(tools);
+
+  const list = document.createElement("div");
+  list.className = "font-list";
+  for (const font of state.fonts || []) {
+    const chip = document.createElement("span");
+    chip.className = "font-chip";
+    chip.textContent = font;
+    chip.title = font;
+    list.appendChild(chip);
+  }
+  if (!list.children.length) {
+    const empty = document.createElement("span");
+    empty.className = "font-count";
+    empty.textContent = "No loaded fonts";
+    list.appendChild(empty);
+  }
+  parent.appendChild(list);
 }
 
 function makeAssetCell(area, file) {
@@ -1066,6 +1114,54 @@ function replaceAsset(area, file, imgEl) {
       scheduleRender(true);
     } catch (e) {
       setStatus(String(e.message || e), "err");
+    }
+  };
+  input.click();
+}
+
+function isFontUploadName(name) {
+  return /\.(otf|ttf)$/i.test(name || "");
+}
+
+async function uploadFontFile(file) {
+  if (!isFontUploadName(file.name)) {
+    throw new Error("Choose a .ttf or .otf font file.");
+  }
+
+  const dataUrl = await readFileAsDataUrl(file);
+  const current = state.current;
+  if (!current) throw new Error("Choose a style before loading a font.");
+  const uploaded = await (await api(
+    "/api/editor/styles/" + encodeURIComponent(current.section) + "/" + encodeURIComponent(current.name) + "/fonts",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file: file.name, data: dataUrl.split(",")[1] }),
+    }
+  )).json();
+
+  state.fonts = uploaded.fonts || state.fonts;
+  rebuildStyleFormKeepingOpen();
+  buildAssets();
+  scheduleRender(true);
+  return uploaded;
+}
+
+function chooseFontFile() {
+  const input = $("#fontFile");
+  input.value = "";
+  input.onchange = async () => {
+    const f = input.files[0];
+    if (!f) return;
+    setStatus("Loading " + f.name + "...");
+    try {
+      const uploaded = await uploadFontFile(f);
+      const warning = uploaded.restartRecommended ? "; restart server if it does not render" : "";
+      setStatus("Loaded font " + uploaded.font + warning, "ok");
+    } catch (e) {
+      setStatus(String(e.message || e), "err");
+    } finally {
+      input.value = "";
     }
   };
   input.click();
