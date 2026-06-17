@@ -32,9 +32,9 @@ const cardRoute =
     }
 
     const styleRegistry = getStyleRegistry();
-    const style = styleRegistry.getStyle(type, parsedBody.data.style);
-    if (!style) {
-      res.status(400).send(`Error: Unknown Style "${parsedBody.data.style}".`);
+    const style = styleRegistry.getStyle(parsedBody.data.section, parsedBody.data.style);
+    if (!style || style.type !== type) {
+      res.status(400).send(`Error: Unknown Style "${parsedBody.data.section}/${parsedBody.data.style}".`);
       return;
     }
 

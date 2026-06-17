@@ -8,7 +8,7 @@ import { CardArtLoadError } from "../cardArt.js";
 import { cardGenerate, rushCardGenerate } from "../cardGenerate.js";
 import { rushStyleAssetRequirements } from "../rushStyleApplier.js";
 import { standardStyleAssetRequirements } from "../standardStyleApplier.js";
-import type { LoadedStyle, LoadedStyleAsset, StyleRegistryStore, StyleType } from "../styleRegistry.js";
+import type { LoadedStyle, LoadedStyleAsset, StyleRegistry, StyleRegistryStore, StyleType } from "../styleRegistry.js";
 import { APIBodySchema, settingsSchema, styleNameSchema } from "../types.js";
 import { createZip, readZip, type ZipEntry } from "./zip.js";
 
@@ -114,13 +114,13 @@ const writeAssetOverrides = (style: LoadedStyle, overrides: DecodedAssetOverride
   }
 };
 
-const updateStyleIdentity = (directory: string, type: StyleType, name: string) => {
+const updateStyleIdentity = (directory: string, section: string, type: StyleType, name: string) => {
   const manifestPath = path.join(directory, "style.json");
   const manifest = readRawJson(manifestPath);
   if (!isObjectRecord(manifest)) {
     throw new Error("style.json must be a JSON object");
   }
-  fs.writeFileSync(manifestPath, JSON.stringify({ ...manifest, name, type }, null, 2), "utf8");
+  fs.writeFileSync(manifestPath, JSON.stringify({ ...manifest, name, section, type }, null, 2), "utf8");
 
   const settingsPath = path.join(directory, "settings.json");
   try {
@@ -142,6 +142,9 @@ const walkDir = (dir: string, base: string, entries: ZipEntry[]) => {
   }
 };
 
+const getSectionType = (registry: StyleRegistry, section: string): StyleType | undefined =>
+  registry.listStyles().find((style) => style.section === section)?.type;
+
 const createEditorRouter = (store: StyleRegistryStore): express.Router => {
   const router = express.Router();
   const jsonLarge = express.json({ limit: "80mb" });
@@ -158,17 +161,17 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
   router.get("/api/editor/styles", (_req, res) => {
     const styles = registry()
       .listStyles()
-      .map((style) => ({ type: style.type, name: style.name }));
+      .map((style) => ({ type: style.type, section: style.section, name: style.name }));
     res.json({ styles });
   });
 
-  router.get("/api/editor/styles/:type/:name", (req, res) => {
-    const { type, name } = req.params;
-    if (!isStyleType(type) || !isValidName(name)) {
-      res.status(400).send("Invalid style type or name");
+  router.get("/api/editor/styles/:section/:name", (req, res) => {
+    const { section, name } = req.params;
+    if (!isValidName(section) || !isValidName(name)) {
+      res.status(400).send("Invalid style section or name");
       return;
     }
-    const style = registry().getStyle(type, name);
+    const style = registry().getStyle(section, name);
     if (!style) {
       res.status(404).send("Style not found");
       return;
@@ -183,8 +186,10 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
 
     res.json({
       type: style.type,
+      section: style.section,
       name: style.name,
       settings,
+      fonts: Object.keys(style.renderContext.fontMetrics).sort(),
       assets: {
         icons: [...style.assets.icons.keys()].sort(),
         template: [...style.assets.template.keys()].sort(),
@@ -193,13 +198,13 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
   });
 
   // --- Asset preview ---------------------------------------------------------
-  router.get("/api/editor/styles/:type/:name/asset/:area/:file", (req, res) => {
-    const { type, name, area, file } = req.params;
-    if (!isStyleType(type) || !isValidName(name) || !isAssetArea(area)) {
+  router.get("/api/editor/styles/:section/:name/asset/:area/:file", (req, res) => {
+    const { section, name, area, file } = req.params;
+    if (!isValidName(section) || !isValidName(name) || !isAssetArea(area)) {
       res.status(400).send("Invalid request");
       return;
     }
-    const style = registry().getStyle(type, name);
+    const style = registry().getStyle(section, name);
     const asset = style?.assets[area].get(file);
     if (!asset) {
       res.status(404).send("Asset not found");
@@ -210,13 +215,13 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
   });
 
   // --- Download style as ZIP -------------------------------------------------
-  router.get("/api/editor/styles/:type/:name/zip", (req, res) => {
-    const { type, name } = req.params;
-    if (!isStyleType(type) || !isValidName(name)) {
-      res.status(400).send("Invalid style type or name");
+  router.get("/api/editor/styles/:section/:name/zip", (req, res) => {
+    const { section, name } = req.params;
+    if (!isValidName(section) || !isValidName(name)) {
+      res.status(400).send("Invalid style section or name");
       return;
     }
-    const style = registry().getStyle(type, name);
+    const style = registry().getStyle(section, name);
     if (!style) {
       res.status(404).send("Style not found");
       return;
@@ -234,14 +239,14 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
 
   // --- Live render (settings overridden in-memory, never persisted) ----------
   router.post("/api/editor/render", jsonLarge, async (req, res) => {
-    const { type, style: styleName } = req.body ?? {};
-    if (!isStyleType(type) || !isValidName(styleName)) {
-      res.status(400).send("Invalid style type or name");
+    const { section, style: styleName } = req.body ?? {};
+    if (!isValidName(section) || !isValidName(styleName)) {
+      res.status(400).send("Invalid style section or name");
       return;
     }
-    const basePack = registry().getStyle(type, styleName);
+    const basePack = registry().getStyle(section, styleName);
     if (!basePack) {
-      res.status(400).send(`Unknown style "${styleName}"`);
+      res.status(400).send(`Unknown style "${section}/${styleName}"`);
       return;
     }
 
@@ -257,14 +262,14 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
       res.status(400).send("Invalid assets: " + (error as Error).message);
       return;
     }
-    const cardResult = APIBodySchema.safeParse({ ...(req.body?.card ?? {}), style: styleName });
+    const cardResult = APIBodySchema.safeParse({ ...(req.body?.card ?? {}), section, style: styleName });
     if (!cardResult.success) {
       res.status(400).send("Invalid card: " + formatZodError(cardResult.error));
       return;
     }
 
     const previewPack = applyAssetOverrides({ ...basePack, settings: settingsResult.data }, assetOverrides);
-    const generate = type === "rush" ? rushCardGenerate : cardGenerate;
+    const generate = basePack.type === "rush" ? rushCardGenerate : cardGenerate;
 
     try {
       const buffer = await generate(cardResult.data, previewPack);
@@ -281,13 +286,13 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
   });
 
   // --- Save settings/assets --------------------------------------------------
-  router.post("/api/editor/styles/:type/:name", jsonLarge, (req, res) => {
-    const { type, name } = req.params;
-    if (!isStyleType(type) || !isValidName(name)) {
-      res.status(400).send("Invalid style type or name");
+  router.post("/api/editor/styles/:section/:name", jsonLarge, (req, res) => {
+    const { section, name } = req.params;
+    if (!isValidName(section) || !isValidName(name)) {
+      res.status(400).send("Invalid style section or name");
       return;
     }
-    const style = registry().getStyle(type, name);
+    const style = registry().getStyle(section, name);
     if (!style) {
       res.status(404).send("Style not found");
       return;
@@ -328,26 +333,27 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
   });
 
   // --- Rename a style --------------------------------------------------------
-  router.post("/api/editor/styles/:type/:name/rename", jsonLarge, (req, res) => {
-    const { type, name } = req.params;
+  router.post("/api/editor/styles/:section/:name/rename", jsonLarge, (req, res) => {
+    const { section, name } = req.params;
     const newName = req.body?.name;
-    if (!isStyleType(type) || !isValidName(name) || !isValidName(newName)) {
-      res.status(400).send("Invalid style type or name");
+    if (!isValidName(section) || !isValidName(name) || !isValidName(newName)) {
+      res.status(400).send("Invalid style section or name");
       return;
     }
     if (newName === name) {
-      res.json({ type, name });
+      const style = registry().getStyle(section, name);
+      res.json({ type: style?.type, section, name });
       return;
     }
 
     const reg = registry();
-    const style = reg.getStyle(type, name);
+    const style = reg.getStyle(section, name);
     if (!style) {
       res.status(404).send("Style not found");
       return;
     }
-    if (reg.getStyle(type, newName)) {
-      res.status(409).send(`Style "${type}/${newName}" already exists`);
+    if (reg.getStyle(section, newName)) {
+      res.status(409).send(`Style "${section}/${newName}" already exists`);
       return;
     }
 
@@ -361,14 +367,14 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
 
     try {
       if (moved) fs.renameSync(sourceDir, targetDir);
-      updateStyleIdentity(targetDir, type, newName);
+      updateStyleIdentity(targetDir, section, style.type, newName);
       store.reload();
     } catch (error) {
       try {
         if (moved && fs.existsSync(targetDir) && !fs.existsSync(sourceDir)) {
           fs.renameSync(targetDir, sourceDir);
         }
-        updateStyleIdentity(sourceDir, type, name);
+        updateStyleIdentity(sourceDir, section, style.type, name);
         store.reload();
       } catch {
         // Preserve the original error; rollback failures are best handled manually with the reported path.
@@ -377,43 +383,58 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
       return;
     }
 
-    res.json({ type, name: newName });
+    res.json({ type: style.type, section, name: newName });
   });
 
   // --- Create a new style (clone of an existing one) -------------------------
   router.post("/api/editor/styles", jsonLarge, (req, res) => {
     const body = req.body ?? {};
     const name = body.name;
+    const section = typeof body.section === "string" ? body.section.trim() : "";
     const from = body.from ?? {};
     if (!isValidName(name)) {
-      res.status(400).send("Invalid style name. Use letters, numbers, hyphen and underscore only.");
+      res.status(400).send("Invalid style name");
       return;
     }
-    if (!isStyleType(from.type) || !isValidName(from.name)) {
+    if (!isValidName(section)) {
+      res.status(400).send("Section and series are required");
+      return;
+    }
+    if (!isValidName(from.section) || !isValidName(from.name)) {
       res.status(400).send("Invalid base style");
       return;
     }
 
-    const type = from.type;
     const reg = registry();
-    if (reg.getStyle(type, name)) {
-      res.status(409).send(`Style "${type}/${name}" already exists`);
-      return;
-    }
-    const source = reg.getStyle(from.type, from.name);
+    const source = reg.getStyle(from.section, from.name);
     if (!source) {
       res.status(400).send("Base style not found");
       return;
     }
+    const type = source.type;
+    const existingSectionType = getSectionType(reg, section);
+    if (existingSectionType && existingSectionType !== type) {
+      res.status(409).send(`Section "${section}" already uses "${existingSectionType}" styles`);
+      return;
+    }
+    if (reg.getStyle(section, name)) {
+      res.status(409).send(`Style "${section}/${name}" already exists`);
+      return;
+    }
 
-    const targetDir = path.join(reg.rootDir, "assets", type, name);
+    const targetDir = path.join(reg.rootDir, "assets", section, name);
     if (fs.existsSync(targetDir)) {
       res.status(409).send(`Directory already exists: ${targetDir}`);
       return;
     }
 
     fs.cpSync(source.directory, targetDir, { recursive: true });
-    fs.writeFileSync(path.join(targetDir, "style.json"), JSON.stringify({ name, type }, null, 2), "utf8");
+    const manifest = {
+      name,
+      type,
+      section,
+    };
+    fs.writeFileSync(path.join(targetDir, "style.json"), JSON.stringify(manifest, null, 2), "utf8");
     const settingsPath = path.join(targetDir, "settings.json");
     try {
       const settings = readRawJson(settingsPath) as Record<string, unknown>;
@@ -430,7 +451,7 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
       res.status(500).send("Created style is invalid: " + (error as Error).message);
       return;
     }
-    res.json({ type, name });
+    res.json({ type, section, name });
   });
 
   // --- Import a style from an uploaded ZIP (writes to THIS server's disk) -----
@@ -459,16 +480,16 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
       return;
     }
 
-    let manifest: { name?: unknown; type?: unknown };
+    let manifest: { name?: unknown; type?: unknown; section?: unknown };
     try {
       manifest = JSON.parse(manifestEntry.data.toString("utf8").replace(/^﻿/, ""));
     } catch {
       res.status(400).send("style.json is not valid JSON");
       return;
     }
-    const { type, name } = manifest;
-    if (!isStyleType(type) || !isValidName(name)) {
-      res.status(400).send("style.json has an invalid name or type");
+    const { type, name, section } = manifest;
+    if (!isStyleType(type) || !isValidName(name) || !isValidName(section)) {
+      res.status(400).send("style.json must have a valid name, type, and section");
       return;
     }
 
@@ -517,8 +538,13 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
     }
 
     const reg = registry();
-    const existing = reg.getStyle(type, name);
-    const targetDir = existing ? existing.directory : path.join(reg.rootDir, "assets", type, name);
+    const existingSectionType = getSectionType(reg, section);
+    if (existingSectionType && existingSectionType !== type) {
+      res.status(409).send(`Section "${section}" already uses "${existingSectionType}" styles`);
+      return;
+    }
+    const existing = reg.getStyle(section, name);
+    const targetDir = existing ? existing.directory : path.join(reg.rootDir, "assets", section, name);
 
     fs.rmSync(targetDir, { recursive: true, force: true });
     for (const entry of staged) {
@@ -533,13 +559,13 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
       res.status(500).send("Imported, but reload failed: " + (error as Error).message);
       return;
     }
-    res.json({ type, name, overrode: Boolean(existing) });
+    res.json({ type, section, name, overrode: Boolean(existing) });
   });
 
   // --- Replace an asset (icon / template png) --------------------------------
-  router.post("/api/editor/styles/:type/:name/asset/:area/:file", jsonLarge, (req, res) => {
-    const { type, name, area, file } = req.params;
-    if (!isStyleType(type) || !isValidName(name) || !isAssetArea(area)) {
+  router.post("/api/editor/styles/:section/:name/asset/:area/:file", jsonLarge, (req, res) => {
+    const { section, name, area, file } = req.params;
+    if (!isValidName(section) || !isValidName(name) || !isAssetArea(area)) {
       res.status(400).send("Invalid request");
       return;
     }
@@ -547,7 +573,7 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
       res.status(400).send("Asset file name must be a .png");
       return;
     }
-    const style = registry().getStyle(type, name);
+    const style = registry().getStyle(section, name);
     if (!style) {
       res.status(404).send("Style not found");
       return;

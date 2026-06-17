@@ -15,12 +15,14 @@ const styleManifestSchema = z
   .object({
     name: styleNameSchema,
     type: styleTypeSchema,
+    section: styleNameSchema,
     fonts: z.array(z.string().min(1)).optional(),
   })
   .passthrough();
 const styleConfigEntrySchema = z.object({
   name: styleNameSchema,
   type: styleTypeSchema,
+  section: styleNameSchema,
   directory: z.string().min(1).optional(),
   enabled: z.boolean().default(true),
 });
@@ -42,6 +44,7 @@ type LoadedStyleAsset = {
 type LoadedStyle = {
   name: string;
   type: StyleType;
+  section: string;
   directory: string;
   assets: Record<StyleAssetArea, Map<string, LoadedStyleAsset>>;
   settings: settings;
@@ -51,7 +54,7 @@ type LoadedStyle = {
 type StyleRegistry = {
   rootDir: string;
   rootDirs: string[];
-  getStyle: (type: StyleType, name: string) => LoadedStyle | undefined;
+  getStyle: (section: string, name: string) => LoadedStyle | undefined;
   listStyles: (type?: StyleType) => LoadedStyle[];
 };
 
@@ -64,6 +67,7 @@ type StyleRegistryStore = {
 type StyleLoadEntry = {
   name: string;
   type: StyleType;
+  section: string;
   rootDir: string;
   directory: string;
   manifest?: StyleManifest;
@@ -82,7 +86,7 @@ const getStylesRootDirs = () => {
   return roots.filter(Boolean).map((rootDir) => path.resolve(rootDir));
 };
 
-const defaultStyleDirectory = (type: StyleType, name: string) => path.join("assets", type, name);
+const defaultStyleDirectory = (section: string, name: string) => path.join("assets", section, name);
 
 const exists = (filePath: string) => fs.existsSync(filePath);
 
@@ -157,19 +161,23 @@ const loadConfigEntries = (rootDir: string): StyleLoadEntry[] | undefined => {
   return parsedConfig.data.styles
     .filter((entry) => entry.enabled)
     .map((entry) => {
-      const directory = path.resolve(rootDir, entry.directory || defaultStyleDirectory(entry.type, entry.name));
+      const directory = path.resolve(rootDir, entry.directory || defaultStyleDirectory(entry.section, entry.name));
       const manifestPath = path.join(directory, "style.json");
       const manifest = exists(manifestPath) ? parseManifest(manifestPath) : undefined;
 
-      if (manifest && (manifest.name !== entry.name || manifest.type !== entry.type)) {
+      if (manifest && (manifest.name !== entry.name || manifest.type !== entry.type || manifest.section !== entry.section)) {
         throw new Error(
-          `Style config entry ${entry.type}/${entry.name} does not match manifest ${manifest.type}/${manifest.name} at ${manifestPath}`
+          `Style config entry ${entry.section}/${entry.name} does not match manifest ${manifest.section}/${manifest.name} at ${manifestPath}`
         );
+      }
+      if (!manifest) {
+        throw new Error(`Style config entry ${entry.type}/${entry.name} must have a style.json manifest`);
       }
 
       return {
         name: entry.name,
         type: entry.type,
+        section: manifest.section,
         rootDir,
         directory,
         manifest,
@@ -183,6 +191,7 @@ const scanManifestEntries = (rootDir: string): StyleLoadEntry[] =>
     return {
       name: manifest.name,
       type: manifest.type,
+      section: manifest.section,
       rootDir,
       directory: path.dirname(manifestPath),
       manifest,
@@ -238,20 +247,20 @@ const loadStyleAssetFiles = (directory: string, label: string): Map<string, Load
 const getRequirements = (type: StyleType): AssetRequirements =>
   type === "standard" ? standardStyleAssetRequirements : rushStyleAssetRequirements;
 
-const validateStyleAssets = (style: Pick<LoadedStyle, "name" | "type" | "assets">) => {
+const validateStyleAssets = (style: Pick<LoadedStyle, "name" | "section" | "type" | "assets">) => {
   const requirements = getRequirements(style.type);
   const missingRequired = (Object.entries(requirements.required) as [StyleAssetArea, string[]][])
     .flatMap(([area, files]) => files.filter((file) => !style.assets[area].has(file)).map((file) => `${area}/${file}`));
 
   if (missingRequired.length > 0) {
-    throw new Error(`Style "${style.type}/${style.name}" is missing required assets: ${missingRequired.join(", ")}`);
+    throw new Error(`Style "${style.section}/${style.name}" is missing required assets: ${missingRequired.join(", ")}`);
   }
 
   const missingOptional = (Object.entries(requirements.optional ?? {}) as [StyleAssetArea, string[]][])
     .flatMap(([area, files]) => files.filter((file) => !style.assets[area].has(file)).map((file) => `${area}/${file}`));
 
   if (missingOptional.length > 0) {
-    console.warn(`Style "${style.type}/${style.name}" is missing optional assets: ${missingOptional.join(", ")}`);
+    console.warn(`Style "${style.section}/${style.name}" is missing optional assets: ${missingOptional.join(", ")}`);
   }
 };
 
@@ -356,14 +365,21 @@ const loadStyleRegistry = (inputRootDirs?: string | string[]): StyleRegistry => 
   };
 
   const styles = new Map<string, LoadedStyle>();
+  const sectionTypes = new Map<string, StyleType>();
 
   for (const entry of entries) {
-    const key = `${entry.type}:${entry.name}`;
+    const sectionType = sectionTypes.get(entry.section);
+    if (sectionType && sectionType !== entry.type) {
+      throw new Error(`Style section "${entry.section}" mixes render types "${sectionType}" and "${entry.type}"`);
+    }
+    sectionTypes.set(entry.section, entry.type);
+
+    const key = `${entry.section}\0${entry.name}`;
     if (styles.has(key)) {
-      throw new Error(`Duplicate style "${entry.name}" for type "${entry.type}" in ${rootDirs.join(path.delimiter)}`);
+      throw new Error(`Duplicate style "${entry.section}/${entry.name}" in ${rootDirs.join(path.delimiter)}`);
     }
 
-    assertDirectory(entry.directory, `style "${entry.name}"`);
+    assertDirectory(entry.directory, `style "${entry.section}/${entry.name}"`);
     const iconsDirectory = path.join(entry.directory, "icons");
     const templateDirectory = path.join(entry.directory, "template");
     assertDirectory(iconsDirectory, `icons directory for style "${entry.name}"`);
@@ -372,6 +388,7 @@ const loadStyleRegistry = (inputRootDirs?: string | string[]): StyleRegistry => 
     const loadedStyle: LoadedStyle = {
       name: entry.name,
       type: entry.type,
+      section: entry.section,
       directory: entry.directory,
       assets: {
         icons: loadStyleAssetFiles(iconsDirectory, `icons directory for style "${entry.name}"`),
@@ -389,13 +406,13 @@ const loadStyleRegistry = (inputRootDirs?: string | string[]): StyleRegistry => 
   console.log(
     `Loaded ${loadedStyles.length} style${loadedStyles.length === 1 ? "" : "s"} from ${rootDirs.join(
       path.delimiter
-    )}: ${loadedStyles.map((style) => `${style.type}/${style.name}`).join(", ")}`
+    )}: ${loadedStyles.map((style) => `${style.section}/${style.name} (${style.type})`).join(", ")}`
   );
 
   return {
     rootDir: rootDirs[0],
     rootDirs,
-    getStyle: (type, name) => styles.get(`${type}:${name}`),
+    getStyle: (section, name) => styles.get(`${section}\0${name}`),
     listStyles: (type) => loadedStyles.filter((style) => !type || style.type === type),
   };
 };

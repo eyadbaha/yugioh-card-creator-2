@@ -58,10 +58,10 @@
   .brand { font-weight: 700; letter-spacing: .3px; font-size: 15px; white-space: nowrap; }
   .brand .dot { color: var(--accent); }
   .topbar .grow { flex: 1; }
-  .topbar .style-pick { display: flex; align-items: center; gap: 8px; min-width: 360px; }
+  .topbar .style-pick { display: flex; align-items: center; gap: 8px; min-width: 430px; }
   .topbar .style-pick select { width: auto; }
-  #styleTypeSelect { min-width: 105px; }
-  #styleNameSelect { min-width: 180px; }
+  #styleTypeSelect { min-width: 170px; }
+  #styleNameSelect { min-width: 150px; }
   #status { font-size: 12px; color: var(--muted); min-width: 90px; text-align: right; }
   #status.ok { color: var(--ok); }
   #status.err { color: var(--danger); }
@@ -187,9 +187,9 @@
   <header class="topbar">
     <div class="brand">YGO Style<span class="dot"> ●</span> Studio</div>
     <div class="style-pick">
-      <label for="styleTypeSelect">Type</label>
+      <label for="styleTypeSelect">Section</label>
       <select id="styleTypeSelect"></select>
-      <label for="styleNameSelect">Format</label>
+      <label for="styleNameSelect">Series</label>
       <select id="styleNameSelect"></select>
     </div>
     <button id="newBtn" class="ghost">+ New</button>
@@ -250,10 +250,14 @@
         <select id="newBase"></select>
       </div>
       <div class="field">
-        <label>New name</label>
-        <input id="newName" placeholder="my_style" autocomplete="off">
+        <label>Section</label>
+        <input id="newSection" placeholder="OCG" autocomplete="off">
       </div>
-      <p class="hint">Letters, numbers, hyphen and underscore only. Assets and settings are copied from the chosen style.</p>
+      <div class="field">
+        <label>Series</label>
+        <input id="newSeries" placeholder="Series 14" autocomplete="off">
+      </div>
+      <p class="hint">Section and series are shown in the picker. Assets and settings are copied from the chosen style.</p>
       <p class="error" id="newError"></p>
       <div class="dialog-actions">
         <button value="cancel" class="ghost">Cancel</button>
@@ -266,10 +270,10 @@
     <form class="dialog-body" method="dialog">
       <h3>Rename style</h3>
       <div class="field">
-        <label>Style name</label>
-        <input id="renameName" placeholder="my_style" autocomplete="off">
+        <label>Series</label>
+        <input id="renameName" placeholder="Series 14" autocomplete="off">
       </div>
-      <p class="hint">Letters, numbers, hyphen and underscore only.</p>
+      <p class="hint">Renames the selected series inside its current section.</p>
       <p class="error" id="renameError"></p>
       <div class="dialog-actions">
         <button value="cancel" class="ghost">Cancel</button>
@@ -284,19 +288,20 @@
 const PLACEHOLDER_ART = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAD0lEQVR4nGP4jwMwDC0JALoev0Ewkwr8AAAAAElFTkSuQmCC";
 
 const ATTRIBUTES = ["LIGHT","DARK","WIND","FIRE","EARTH","WATER","DIVINE","SPELL","TRAP","LAUGH"];
-const STYLE_TYPES = ["standard","rush"];
+const STYLE_SECTION_ORDER = ["OCG","TCG","Duel Links (Speed)","Duel Links (Rush Duel)"];
 const TEMPLATES = ["normal","effect","ritual","fusion","synchro","xyz","link","spell","trap","token"];
 const SPELLTRAP_TEMPLATES = ["spell","trap"];
 const ICONS = ["normal","continuous","counter","equip","field","quick-play","ritual"];
 const LINK_ARROWS = ["Top","Top-Right","Right","Bottom-Right","Bottom","Bottom-Left","Left","Top-Left"];
 
 const $ = (sel, root) => (root || document).querySelector(sel);
-const isValidStyleName = (name) => /^[A-Za-z0-9_-]+$/.test(name);
+const isValidStyleName = (name) => typeof name === "string" && /^[^<>:"/\\|?*\x00-\x1F]+$/.test(name.trim());
 
 const state = {
   styles: [],
-  current: null,            // { type, name }
+  current: null,            // { type, section, name }
   settings: {},             // raw settings being edited
+  fonts: [],
   assets: { icons: [], template: [] },
   stagedAssets: { icons: {}, template: {} },
   dirty: false,
@@ -376,62 +381,93 @@ async function loadStyleList() {
   syncStyleControls(state.current);
 }
 
-function availableStyleTypes() {
+function styleKey(style) {
+  return JSON.stringify({ section: style.section, name: style.name });
+}
+
+function findStyle(section, name) {
+  return state.styles.find((s) => s.section === section && s.name === name) || null;
+}
+
+function splitStyleKey(value) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && parsed.section && parsed.name ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function availableStyleSections() {
   const seen = new Set();
   const ordered = [];
-  for (const preferred of STYLE_TYPES) {
-    if (state.styles.some((s) => s.type === preferred)) {
+  for (const preferred of STYLE_SECTION_ORDER) {
+    if (state.styles.some((s) => s.section === preferred)) {
       seen.add(preferred);
       ordered.push(preferred);
     }
   }
   for (const s of state.styles) {
-    if (!seen.has(s.type)) {
-      seen.add(s.type);
-      ordered.push(s.type);
+    if (!seen.has(s.section)) {
+      seen.add(s.section);
+      ordered.push(s.section);
     }
   }
   return ordered;
 }
 
-function stylesForType(type) {
-  return state.styles.filter((s) => s.type === type);
+function stylesForSection(section) {
+  return state.styles.filter((s) => s.section === section);
+}
+
+function seriesOptionText(style, styles) {
+  const duplicates = styles.filter((s) => s.name === style.name);
+  return duplicates.length > 1 ? style.name + " (" + style.type + ")" : style.name;
+}
+
+function displayStyleRef(section, name) {
+  return section && name ? section + " / " + name : "";
 }
 
 function syncStyleControls(preferred) {
-  const typeSel = $("#styleTypeSelect");
-  const nameSel = $("#styleNameSelect");
-  const types = availableStyleTypes();
-  const requestedType = preferred && preferred.type;
-  const selectedType = types.includes(requestedType) ? requestedType : (types[0] || "");
+  const sectionSel = $("#styleTypeSelect");
+  const seriesSel = $("#styleNameSelect");
+  const sections = availableStyleSections();
+  const requestedStyle = preferred && preferred.section && preferred.name ? findStyle(preferred.section, preferred.name) : null;
+  const requestedSection = requestedStyle ? requestedStyle.section : (preferred && preferred.section);
+  const selectedSection = sections.includes(requestedSection) ? requestedSection : (sections[0] || "");
 
-  typeSel.innerHTML = "";
-  for (const type of types) {
+  sectionSel.innerHTML = "";
+  for (const section of sections) {
     const opt = document.createElement("option");
-    opt.value = type;
-    opt.textContent = type;
-    typeSel.appendChild(opt);
+    opt.value = section;
+    opt.textContent = section;
+    sectionSel.appendChild(opt);
   }
-  typeSel.value = selectedType;
+  sectionSel.value = selectedSection;
 
-  const styles = stylesForType(selectedType);
-  const requestedName = preferred && preferred.name;
-  const selectedName = styles.some((s) => s.name === requestedName) ? requestedName : (styles[0] && styles[0].name) || "";
-  nameSel.innerHTML = "";
+  const styles = stylesForSection(selectedSection);
+  const selectedStyle =
+    requestedStyle && styles.some((s) => s.section === requestedStyle.section && s.name === requestedStyle.name)
+      ? requestedStyle
+      : (styles[0] || null);
+  seriesSel.innerHTML = "";
   for (const s of styles) {
     const opt = document.createElement("option");
-    opt.value = s.name;
-    opt.textContent = s.name;
-    nameSel.appendChild(opt);
+    opt.value = styleKey(s);
+    opt.textContent = seriesOptionText(s, styles);
+    opt.title = s.type;
+    seriesSel.appendChild(opt);
   }
-  nameSel.value = selectedName;
-  return selectedType && selectedName ? { type: selectedType, name: selectedName } : null;
+  if (selectedStyle) seriesSel.value = styleKey(selectedStyle);
+  return selectedStyle ? { type: selectedStyle.type, section: selectedStyle.section, name: selectedStyle.name } : null;
 }
 
-async function loadStyle(type, name) {
-  const data = await (await api("/api/editor/styles/" + type + "/" + encodeURIComponent(name))).json();
-  state.current = { type: data.type, name: data.name };
+async function loadStyle(section, name) {
+  const data = await (await api("/api/editor/styles/" + encodeURIComponent(section) + "/" + encodeURIComponent(name))).json();
+  state.current = { type: data.type, section: data.section, name: data.name };
   state.settings = data.settings || {};
+  state.fonts = data.fonts || [];
   state.assets = data.assets || { icons: [], template: [] };
   resetStagedAssets();
   clearDirty();
@@ -459,6 +495,38 @@ function makeSelect(options, value, onChange) {
     sel.appendChild(opt);
   }
   sel.value = value;
+  sel.addEventListener("change", () => onChange(sel.value));
+  return sel;
+}
+function makeFontSelect(value, onChange) {
+  const sel = document.createElement("select");
+  const selectedValue = String(value == null ? "" : value);
+  const fonts = state.fonts || [];
+
+  if (selectedValue && !fonts.includes(selectedValue)) {
+    const opt = document.createElement("option");
+    opt.value = selectedValue;
+    opt.textContent = selectedValue + " (missing)";
+    opt.disabled = true;
+    sel.appendChild(opt);
+  }
+
+  for (const font of fonts) {
+    const opt = document.createElement("option");
+    opt.value = font;
+    opt.textContent = font;
+    sel.appendChild(opt);
+  }
+
+  if (!fonts.length && !selectedValue) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "No loaded fonts";
+    opt.disabled = true;
+    sel.appendChild(opt);
+  }
+
+  sel.value = selectedValue;
   sel.addEventListener("change", () => onChange(sel.value));
   return sel;
 }
@@ -666,6 +734,7 @@ function buildStyleForm() {
     p.innerHTML = '<p class="empty">No settings loaded.</p>';
     return;
   }
+  ensureStyleEditorDefaults(state.settings);
   const intro = document.createElement("p");
   intro.className = "hint";
   intro.textContent = "Edit any value to update the preview live. Use Save Style to write changes to disk.";
@@ -675,6 +744,18 @@ function buildStyleForm() {
     if (key === "styleName") continue;
     p.appendChild(renderNode(key, state.settings[key], [key]));
   }
+}
+
+function ensureStyleEditorDefaults(settings) {
+  const typeOptions = settings.type;
+  if (typeOptions && typeof typeOptions === "object" && !Array.isArray(typeOptions)) {
+    if (!("color" in typeOptions)) typeOptions.color = "black";
+    if (!("thin" in typeOptions)) typeOptions.thin = 0;
+  }
+}
+
+function isFontFamilyField(key) {
+  return key.toLowerCase().startsWith("fontfamily");
 }
 
 function renderNode(key, value, keys) {
@@ -727,7 +808,12 @@ function renderLeaf(key, value, keys) {
     row.appendChild(ta);
   } else {
     const lower = key.toLowerCase();
-    if (lower.includes("color") || lower.includes("background")) {
+    if (isFontFamilyField(key)) {
+      row.appendChild(makeFontSelect(value, (nextValue) => {
+        setByPath(state.settings, keys, nextValue);
+        scheduleStyleRender();
+      }));
+    } else if (lower.includes("color") || lower.includes("background")) {
       const wrap = document.createElement("div");
       wrap.className = "with-color";
       const text = document.createElement("input");
@@ -794,7 +880,7 @@ function makeAssetCell(area, file) {
 
 function assetUrl(area, file, bust) {
   const c = state.current;
-  return "/api/editor/styles/" + c.type + "/" + encodeURIComponent(c.name) + "/asset/" + area + "/" + encodeURIComponent(file) + (bust ? ("?t=" + bust) : "");
+  return "/api/editor/styles/" + encodeURIComponent(c.section) + "/" + encodeURIComponent(c.name) + "/asset/" + area + "/" + encodeURIComponent(file) + (bust ? ("?t=" + bust) : "");
 }
 
 function replaceAsset(area, file, imgEl) {
@@ -864,7 +950,7 @@ async function doRender() {
   setRenderStatus("Rendering…");
   try {
     const body = {
-      type: state.current.type,
+      section: state.current.section,
       style: state.current.name,
       settings: state.settings,
       assets: state.stagedAssets,
@@ -953,37 +1039,36 @@ function bindTabs() {
 
 function bindToolbar() {
   $("#styleTypeSelect").addEventListener("change", async (e) => {
-    const selected = syncStyleControls({ type: e.target.value });
+    const selected = syncStyleControls({ section: e.target.value });
     if (!selected) return;
-    try { await loadStyle(selected.type, selected.name); setStatus(""); }
+    try { await loadStyle(selected.section, selected.name); setStatus(""); }
     catch (err) { setStatus(String(err.message || err), "err"); }
   });
 
   $("#styleNameSelect").addEventListener("change", async (e) => {
-    const type = $("#styleTypeSelect").value;
-    const name = e.target.value;
-    if (!type || !name) return;
-    try { await loadStyle(type, name); setStatus(""); }
+    const selected = splitStyleKey(e.target.value);
+    if (!selected) return;
+    try { await loadStyle(selected.section, selected.name); setStatus(""); }
     catch (err) { setStatus(String(err.message || err), "err"); }
   });
 
   $("#resetBtn").addEventListener("click", async () => {
     if (!state.current) return;
-    try { await loadStyle(state.current.type, state.current.name); setStatus("Reset to saved", "ok"); }
+    try { await loadStyle(state.current.section, state.current.name); setStatus("Reset to saved", "ok"); }
     catch (err) { setStatus(String(err.message || err), "err"); }
   });
 
   $("#saveBtn").addEventListener("click", async () => {
     if (!state.current) return;
     setStatus("Saving…");
-    const current = { type: state.current.type, name: state.current.name };
+    const current = { section: state.current.section, name: state.current.name };
     try {
-      await api("/api/editor/styles/" + current.type + "/" + encodeURIComponent(current.name), {
+      await api("/api/editor/styles/" + encodeURIComponent(current.section) + "/" + encodeURIComponent(current.name), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settings: state.settings, assets: state.stagedAssets }),
       });
-      await loadStyle(current.type, current.name);
+      await loadStyle(current.section, current.name);
       setStatus("Saved", "ok");
     } catch (err) { setStatus(String(err.message || err), "err"); }
   });
@@ -991,7 +1076,7 @@ function bindToolbar() {
   $("#zipBtn").addEventListener("click", () => {
     if (!state.current) return;
     const a = document.createElement("a");
-    a.href = "/api/editor/styles/" + state.current.type + "/" + encodeURIComponent(state.current.name) + "/zip";
+    a.href = "/api/editor/styles/" + encodeURIComponent(state.current.section) + "/" + encodeURIComponent(state.current.name) + "/zip";
     a.download = state.current.name + ".zip";
     document.body.appendChild(a);
     a.click();
@@ -1012,8 +1097,8 @@ function bindToolbar() {
         body: JSON.stringify({ data: base64 }),
       })).json();
       await loadStyleList();
-      await loadStyle(imported.type, imported.name);
-      setStatus((imported.overrode ? "Overrode " : "Imported ") + imported.type + "/" + imported.name, "ok");
+      await loadStyle(imported.section, imported.name);
+      setStatus((imported.overrode ? "Overrode " : "Imported ") + displayStyleRef(imported.section, imported.name), "ok");
     } catch (err) {
       setStatus(String(err.message || err), "err");
     } finally {
@@ -1066,44 +1151,59 @@ function bindToolbar() {
 
 function bindNewDialog() {
   const dlg = $("#newDialog");
+  const selectedNewBaseStyle = () => {
+    const selected = splitStyleKey($("#newBase").value);
+    return selected ? findStyle(selected.section, selected.name) : null;
+  };
+  const fillNewStyleGrouping = () => {
+    const style = selectedNewBaseStyle();
+    $("#newSection").value = style ? style.section : "";
+    $("#newSeries").value = style ? style.name : "";
+  };
+
   $("#newBtn").addEventListener("click", () => {
     const base = $("#newBase");
     base.innerHTML = "";
-    for (const type of availableStyleTypes()) {
+    for (const section of availableStyleSections()) {
       const group = document.createElement("optgroup");
-      group.label = type;
-      for (const s of stylesForType(type)) {
+      group.label = section;
+      const styles = stylesForSection(section);
+      for (const s of styles) {
         const opt = document.createElement("option");
-        opt.value = s.type + "/" + s.name;
-        opt.textContent = s.name;
+        opt.value = styleKey(s);
+        opt.textContent = seriesOptionText(s, styles);
         group.appendChild(opt);
       }
       base.appendChild(group);
     }
-    if (state.current) base.value = state.current.type + "/" + state.current.name;
-    $("#newName").value = "";
+    if (state.current) base.value = styleKey(state.current);
+    fillNewStyleGrouping();
     $("#newError").textContent = "";
     dlg.showModal();
   });
 
+  $("#newBase").addEventListener("change", fillNewStyleGrouping);
+
   $("#newCreate").addEventListener("click", async (e) => {
     e.preventDefault();
-    const [type, name] = $("#newBase").value.split("/");
-    const newName = $("#newName").value.trim();
-    if (!isValidStyleName(newName)) {
-      $("#newError").textContent = "Name must use only letters, numbers, hyphen and underscore.";
+    const selected = splitStyleKey($("#newBase").value);
+    if (!selected) return;
+    const section = $("#newSection").value.trim();
+    const series = $("#newSeries").value.trim();
+    if (!isValidStyleName(section) || !isValidStyleName(series)) {
+      $("#newError").textContent = "Section and series are required.";
       return;
     }
     try {
       const created = await (await api("/api/editor/styles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName, from: { type, name } }),
+        body: JSON.stringify({ name: series, section, from: selected }),
       })).json();
       dlg.close();
       await loadStyleList();
-      await loadStyle(created.type, created.name);
-      setStatus("Created " + created.type + "/" + created.name, "ok");
+      await loadStyle(created.section, created.name);
+      setStatus("Created " + displayStyleRef(created.section, created.name), "ok");
     } catch (err) {
       $("#newError").textContent = String(err.message || err);
     }
@@ -1124,10 +1224,10 @@ function bindRenameDialog() {
     e.preventDefault();
     if (!state.current) return;
 
-    const current = { type: state.current.type, name: state.current.name };
+    const current = { section: state.current.section, name: state.current.name };
     const newName = $("#renameName").value.trim();
     if (!isValidStyleName(newName)) {
-      $("#renameError").textContent = "Name must use only letters, numbers, hyphen and underscore.";
+      $("#renameError").textContent = "Series name is invalid.";
       return;
     }
     if (newName === current.name) {
@@ -1137,14 +1237,14 @@ function bindRenameDialog() {
 
     try {
       const renamed = await (await api(
-        "/api/editor/styles/" + current.type + "/" + encodeURIComponent(current.name) + "/rename",
+        "/api/editor/styles/" + encodeURIComponent(current.section) + "/" + encodeURIComponent(current.name) + "/rename",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: newName }),
         }
       )).json();
-      state.current = { type: renamed.type, name: renamed.name };
+      state.current = { type: renamed.type, section: renamed.section, name: renamed.name };
       await loadStyleList();
       syncStyleControls(state.current);
       buildAssets();
@@ -1169,7 +1269,7 @@ async function boot() {
     await loadStyleList();
     const selected = syncStyleControls(state.current);
     if (!selected) { setStatus("No styles found", "err"); return; }
-    await loadStyle(selected.type, selected.name);
+    await loadStyle(selected.section, selected.name);
   } catch (err) {
     setStatus(String(err.message || err), "err");
   }

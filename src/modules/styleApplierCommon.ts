@@ -16,7 +16,7 @@ const createStyleAssetResolver =
   (area, fileName) => {
     const asset = style.assets[area].get(fileName);
     if (!asset) {
-      throw new Error(`Missing ${area} asset "${fileName}" for style "${style.type}/${style.name}"`);
+      throw new Error(`Missing ${area} asset "${fileName}" for style "${style.section}/${style.name}"`);
     }
 
     return asset;

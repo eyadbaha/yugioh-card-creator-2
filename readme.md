@@ -42,12 +42,13 @@ Each pack is self-describing with a `style.json` manifest:
 
 ```json
 {
-  "name": "duel_links",
+  "name": "Series 1",
+  "section": "Duel Links (Speed)",
   "type": "standard"
 }
 ```
 
-`type` is `standard` for `/` or `rush` for `/rush`. See `styles/README.md` for the full layout and custom-pack walkthrough.
+`section` is the editor grouping, `name` is the series inside that section, and all styles in one section must share a `type`. See `styles/README.md` for the full layout and custom-pack walkthrough.
 
 ## Runtime Options
 

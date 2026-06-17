@@ -3,7 +3,11 @@ import z from "zod";
 const attributes = ["LIGHT", "DARK", "WIND", "FIRE", "EARTH", "WATER", "DIVINE", "SPELL", "TRAP", "LAUGH"] as const;
 const templates = ["normal", "effect", "ritual", "fusion", "synchro", "xyz", "link", "spell", "trap", "token"] as const;
 const linkArrowsEnum = ["Top", "Top-Right", "Right", "Bottom-Right", "Bottom", "Bottom-Left", "Left", "Top-Left"] as const;
-const styleNameSchema = z.string().min(1).regex(/^[A-Za-z0-9_-]+$/);
+const styleNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .regex(/^[^<>:"/\\|?*\x00-\x1F]+$/);
 const monsterTypeSchema = z.union([
   z.array(z.string()),
   // TODO: Remove string fallback after clients migrate to string array monsterType values.
@@ -134,6 +138,7 @@ const settingsSchema = z.object({
 const APIBodySchema = z
   .object({
     name: z.string(),
+    section: styleNameSchema,
     style: styleNameSchema,
     attribute: z.enum(attributes),
     level: z.number().nonnegative().lt(14).optional(),
