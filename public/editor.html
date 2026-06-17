@@ -108,6 +108,12 @@
   .leaf > label { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
   .leaf .with-color { display: flex; gap: 6px; }
   .leaf .with-color input[type=color] { width: 34px; padding: 2px; }
+  .attr-tools {
+    display: grid; gap: 6px; margin: 2px 0 10px; padding: 7px;
+    border: 1px dashed var(--border); border-radius: 7px; background: rgba(255,255,255,.025);
+  }
+  .attr-tool-row { display: grid; grid-template-columns: 1fr 34px; gap: 6px; }
+  .attr-tool-row button { width: 34px; padding-left: 0; padding-right: 0; }
 
   /* Assets */
   .asset-group-title { font-size: 12px; color: var(--muted); margin: 14px 0 8px; text-transform: uppercase; letter-spacing: .6px; }
@@ -293,6 +299,38 @@ const TEMPLATES = ["normal","effect","ritual","fusion","synchro","xyz","link","s
 const SPELLTRAP_TEMPLATES = ["spell","trap"];
 const ICONS = ["normal","continuous","counter","equip","field","quick-play","ritual"];
 const LINK_ARROWS = ["Top","Top-Right","Right","Bottom-Right","Bottom","Bottom-Left","Left","Top-Left"];
+const DEBUG_TEXTBOX_BACKGROUND = "#ff0000";
+const TEXT_OPTION_ATTRIBUTES = [
+  "width",
+  "height",
+  "size",
+  "fontFamily",
+  "fit",
+  "scaleX",
+  "scaleY",
+  "lineHeight",
+  "weight",
+  "opacity",
+  "color",
+  "left",
+  "top",
+  "spacing",
+  "letterSpacing",
+  "wordSpacing",
+  "align",
+  "background",
+  "allCaps",
+  "smallCaps",
+  "smallCapsScale",
+  "smallCapsStroke",
+  "thin",
+  "stroke",
+  "outline",
+  "overrush",
+  "brackets",
+];
+const NON_REMOVABLE_TEXT_OPTION_ATTRIBUTES = new Set(["width", "height"]);
+const TEXT_OPTION_GROUP_NAMES = new Set(["name", "type", "text", "textSpell", "pendulumText", "stat", "scale", "linkRating", "levelString"]);
 
 const $ = (sel, root) => (root || document).querySelector(sel);
 const isValidStyleName = (name) => typeof name === "string" && /^[^<>:"/\\|?*\x00-\x1F]+$/.test(name.trim());
@@ -727,7 +765,129 @@ function setByPath(obj, keys, value) {
   cur[keys[keys.length - 1]] = value;
 }
 
-function buildStyleForm() {
+function isObjectRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isTextRenderOptions(value, keys) {
+  return isObjectRecord(value)
+    && typeof value.width === "number"
+    && typeof value.height === "number"
+    && (typeof value.fontFamily === "string" || TEXT_OPTION_GROUP_NAMES.has(keys[keys.length - 1]));
+}
+
+function copyValue(value) {
+  if (!isObjectRecord(value) && !Array.isArray(value)) return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function defaultTextOptionAttributeValue(key, options) {
+  const font = options.fontFamily || state.fonts[0] || "Arial";
+  const size = Number.isFinite(Number(options.size)) ? Number(options.size) : 10;
+  const defaults = {
+    width: 100,
+    height: 40,
+    size: 10,
+    fontFamily: font,
+    fit: "container",
+    scaleX: 1,
+    scaleY: 1,
+    lineHeight: 1,
+    weight: 400,
+    opacity: 1,
+    color: "black",
+    left: 0,
+    top: 0,
+    spacing: 0,
+    letterSpacing: 0,
+    wordSpacing: 0,
+    align: "left",
+    background: DEBUG_TEXTBOX_BACKGROUND,
+    allCaps: false,
+    smallCaps: false,
+    smallCapsScale: 0.8,
+    smallCapsStroke: 0,
+    thin: 0,
+    stroke: 0,
+    outline: { width: 1, color: "black" },
+    overrush: false,
+    brackets: { size, fontFamily: font },
+  };
+  return copyValue(defaults[key]);
+}
+
+function getOpenStyleGroupPaths() {
+  return new Set(Array.from(document.querySelectorAll("#panel-style details.grp[open]")).map((el) => el.dataset.path));
+}
+
+function rebuildStyleFormKeepingOpen() {
+  buildStyleForm(getOpenStyleGroupPaths());
+}
+
+function makeAttributeSelect(keys, placeholder) {
+  const sel = document.createElement("select");
+  sel.setAttribute("aria-label", placeholder);
+  const intro = document.createElement("option");
+  intro.value = "";
+  intro.textContent = placeholder;
+  intro.disabled = true;
+  sel.appendChild(intro);
+  for (const key of keys) {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = key;
+    sel.appendChild(opt);
+  }
+  sel.value = "";
+  return sel;
+}
+
+function makeTextOptionAttributeTools(options) {
+  const wrap = document.createElement("div");
+  wrap.className = "attr-tools";
+
+  const missing = TEXT_OPTION_ATTRIBUTES.filter((key) => !(key in options));
+  const addRow = document.createElement("div");
+  addRow.className = "attr-tool-row";
+  const addSelect = makeAttributeSelect(missing, "Add attribute");
+  const add = document.createElement("button");
+  add.type = "button";
+  add.textContent = "+";
+  add.title = "Add selected text attribute";
+  add.disabled = missing.length === 0;
+  add.addEventListener("click", () => {
+    if (!addSelect.value) return;
+    options[addSelect.value] = defaultTextOptionAttributeValue(addSelect.value, options);
+    rebuildStyleFormKeepingOpen();
+    scheduleStyleRender(true);
+  });
+  addRow.appendChild(addSelect);
+  addRow.appendChild(add);
+  wrap.appendChild(addRow);
+
+  const removable = TEXT_OPTION_ATTRIBUTES.filter((key) => key in options && !NON_REMOVABLE_TEXT_OPTION_ATTRIBUTES.has(key));
+  const removeRow = document.createElement("div");
+  removeRow.className = "attr-tool-row";
+  const removeSelect = makeAttributeSelect(removable, "Remove attribute");
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.textContent = "-";
+  remove.title = "Remove selected text attribute";
+  remove.disabled = removable.length === 0;
+  remove.addEventListener("click", () => {
+    if (!removeSelect.value) return;
+    delete options[removeSelect.value];
+    rebuildStyleFormKeepingOpen();
+    scheduleStyleRender(true);
+  });
+  removeRow.appendChild(removeSelect);
+  removeRow.appendChild(remove);
+  wrap.appendChild(removeRow);
+
+  return wrap;
+}
+
+function buildStyleForm(openGroups) {
   const p = $("#panel-style");
   p.innerHTML = "";
   if (!state.settings || typeof state.settings !== "object") {
@@ -742,7 +902,7 @@ function buildStyleForm() {
 
   for (const key of Object.keys(state.settings)) {
     if (key === "styleName") continue;
-    p.appendChild(renderNode(key, state.settings[key], [key]));
+    p.appendChild(renderNode(key, state.settings[key], [key], openGroups));
   }
 }
 
@@ -758,18 +918,23 @@ function isFontFamilyField(key) {
   return key.toLowerCase().startsWith("fontfamily");
 }
 
-function renderNode(key, value, keys) {
+function renderNode(key, value, keys, openGroups) {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
     const details = document.createElement("details");
     details.className = "grp";
-    if (keys.length === 1) details.open = false;
+    details.dataset.path = keys.join(".");
+    if (openGroups && openGroups.has(details.dataset.path)) details.open = true;
+    else if (keys.length === 1) details.open = false;
     const summary = document.createElement("summary");
     summary.textContent = key;
     details.appendChild(summary);
     const body = document.createElement("div");
     body.className = "grp-body";
+    if (isTextRenderOptions(value, keys)) {
+      body.appendChild(makeTextOptionAttributeTools(value));
+    }
     for (const childKey of Object.keys(value)) {
-      body.appendChild(renderNode(childKey, value[childKey], keys.concat(childKey)));
+      body.appendChild(renderNode(childKey, value[childKey], keys.concat(childKey), openGroups));
     }
     details.appendChild(body);
     return details;

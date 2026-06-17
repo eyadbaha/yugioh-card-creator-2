@@ -251,7 +251,8 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
   const y = Math.ceil(options.size as number);
   const padding = getTextOverflowPadding(options);
   const baseSvgWidth = Math.ceil(options.width as number);
-  const baseSvgHeight = Math.ceil(options.height as number) + 20;
+  const textBoxHeight = Math.ceil(options.height as number);
+  const baseSvgHeight = textBoxHeight + 20;
   const svgWidth = baseSvgWidth + padding.right;
   const svgHeight = Math.max(baseSvgHeight, Math.ceil(y + padding.bottom));
   const position =
@@ -259,7 +260,7 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
       ? `x="${Math.ceil(textBoxWidth / 2)}" y="${y}" dominant-baseline="middle" text-anchor="middle"`
       : `x="0" y="${y}"`;
   const background = options.background
-    ? `<rect width="${baseSvgWidth}" height="${baseSvgHeight}" fill="${options.background}" />`
+    ? `<rect width="${baseSvgWidth}" height="${textBoxHeight}" fill="${options.background}" />`
     : "";
   let textWithStroke = "";
 
@@ -278,8 +279,7 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
   }
 
   const outline = options.outline
-    ? `${background}
-       <text ${position} fill="${options.outline.color}" letter-spacing="${options.letterSpacing}" opacity="${
+    ? `<text ${position} fill="${options.outline.color}" letter-spacing="${options.letterSpacing}" opacity="${
         options.opacity
       }" font-weight="${options.weight}" stroke-width="${
         options.outline.width + (options.stroke || 0)
@@ -296,6 +296,7 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
   const svgString = `
     <svg width="${svgWidth}" height="${svgHeight}">
       ${createDefs(options, context, svgWidth, svgHeight)}
+      ${background}
       <g transform="translate(${options.offsetX}, 0)">
         <g transform="scale(${options.scaleX}, ${options.scaleY})">
           ${outline}
