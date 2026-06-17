@@ -31,19 +31,34 @@ const isSmallCapsCharacter = (value: string) => /^[a-z\u00e0-\u00ff]$/.test(valu
 
 const countWordSpacingSlots = (text: string) => text.split(" ").length - 1;
 
+const countLetterSpacingSlots = (text: string, options: TextOptions) => {
+  if ((options.wordSpacing ?? defaultTextOptions.wordSpacing) !== 0) {
+    let slots = 0;
+
+    for (let index = 1; index < text.length; index += 1) {
+      if (text[index - 1] !== " " && text[index] !== " ") slots += 1;
+    }
+
+    return slots;
+  }
+
+  return Math.max(0, text.length - 1);
+};
+
 const calcWidthWithLetterSpacing = (
   text: string,
   inputOptions: TextOptions,
   context: RenderContext,
-  letterSpacingSlots = text.length
+  letterSpacingSlots?: number
 ): number => {
   const options = normalizeOptions(inputOptions);
   const fontInstance = requireFont(context, options.fontFamily);
   const glyph = fontInstance.layout(text);
+  const spacingSlots = letterSpacingSlots ?? countLetterSpacingSlots(text, options);
 
   return (
     ((glyph.advanceWidth / fontInstance.unitsPerEm) * options.size +
-      letterSpacingSlots * options.letterSpacing +
+      spacingSlots * options.letterSpacing +
       countWordSpacingSlots(text) * options.wordSpacing) *
     1.005 *
     options.scaleX
@@ -93,7 +108,7 @@ const getTxtWidthWithoutBracketStyles = (
           run.smallCaps ? run.text.toUpperCase() : run.text,
           options,
           context,
-          Math.max(0, run.text.length - 1)
+          countLetterSpacingSlots(run.text, options)
         )
       );
     }, 0);
