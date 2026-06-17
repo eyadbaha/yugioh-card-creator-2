@@ -66,17 +66,22 @@ type RushRenderLayer =
   | { kind: "art" };
 
 const isMonsterCard = (options: APIBody) =>
-  options.template !== "spell" && options.template !== "trap" && Boolean(options.monsterType);
+  options.template !== "spell" &&
+  options.template !== "trap" &&
+  (Array.isArray(options.monsterType) ? options.monsterType.length > 0 : Boolean(options.monsterType));
 
-const getTextVariant = (monsterType = ""): TextVariant => {
-  const normalizedType = monsterType.toLocaleLowerCase();
-  if (!normalizedType.includes("normal")) return "effect";
-  return normalizedType.includes("pendulum") ? "normalPendulum" : "normal";
+const formatMonsterType = (monsterType: APIBody["monsterType"] = "") =>
+  Array.isArray(monsterType) ? `[${monsterType.join(" / ")}]` : monsterType;
+
+const getTextVariant = (options: Pick<APIBody, "template" | "pendulum">): TextVariant => {
+  if (options.template !== "normal") return "effect";
+  return options.pendulum ? "normalPendulum" : "normal";
 };
 
 export {
   linkArrowPositions,
   isMonsterCard,
+  formatMonsterType,
   getTextVariant,
   type CardRenderPlan,
   type LinkArrowPosition,

@@ -4,6 +4,11 @@ const attributes = ["LIGHT", "DARK", "WIND", "FIRE", "EARTH", "WATER", "DIVINE",
 const templates = ["normal", "effect", "ritual", "fusion", "synchro", "xyz", "link", "spell", "trap", "token"] as const;
 const linkArrowsEnum = ["Top", "Top-Right", "Right", "Bottom-Right", "Bottom", "Bottom-Left", "Left", "Top-Left"] as const;
 const styleNameSchema = z.string().min(1).regex(/^[A-Za-z0-9_-]+$/);
+const monsterTypeSchema = z.union([
+  z.array(z.string()),
+  // TODO: Remove string fallback after clients migrate to string array monsterType values.
+  z.string(),
+]);
 const generateOptionsSchema = z.object({
   width: z.number(),
   height: z.number(),
@@ -125,7 +130,7 @@ const APIBodySchema = z
     level: z.number().nonnegative().lt(14).optional(),
     art: z.string(),
     template: z.enum(templates).default("token"),
-    monsterType: z.string().optional(),
+    monsterType: monsterTypeSchema.optional(),
     cardText: z.string(),
     pendulumText: z.string().optional(),
     scale: z.number().nonnegative().lt(15).optional(),

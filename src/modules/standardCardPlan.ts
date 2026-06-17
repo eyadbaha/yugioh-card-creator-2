@@ -1,5 +1,6 @@
 import type { APIBody } from "./types.js";
 import {
+  formatMonsterType,
   getTextVariant,
   isMonsterCard,
   linkArrowPositions,
@@ -58,6 +59,8 @@ const buildStandardCardPlan = (options: APIBody): CardRenderPlan<StandardRenderL
   const statCount = options.disableStats ? 0 : options.level || 0;
 
   if (isMonsterCard(options)) {
+    const monsterType = formatMonsterType(options.monsterType);
+
     if (options.pendulum !== false && options.template !== "link") {
       appendPendulumLayers(layers, options);
     } else if (!options.fullArt) {
@@ -65,8 +68,8 @@ const buildStandardCardPlan = (options: APIBody): CardRenderPlan<StandardRenderL
     }
 
     layers.push(
-      { kind: "monsterType", text: options.monsterType as string },
-      { kind: "monsterText", text: options.cardText, variant: getTextVariant(options.monsterType) },
+      { kind: "monsterType", text: monsterType },
+      { kind: "monsterText", text: options.cardText, variant: getTextVariant(options) },
       { kind: "atk", text: options.atk as string }
     );
 

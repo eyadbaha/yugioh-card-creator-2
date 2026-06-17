@@ -1,5 +1,6 @@
 import express from "express";
 import fs from "fs";
+import { imageSize as sizeOf } from "image-size";
 import path from "path";
 import { fileURLToPath } from "url";
 import z from "zod";
@@ -7,7 +8,7 @@ import { CardArtLoadError } from "../cardArt.js";
 import { cardGenerate, rushCardGenerate } from "../cardGenerate.js";
 import { rushStyleAssetRequirements } from "../rushStyleApplier.js";
 import { standardStyleAssetRequirements } from "../standardStyleApplier.js";
-import type { LoadedStyle, StyleRegistryStore, StyleType } from "../styleRegistry.js";
+import type { LoadedStyle, LoadedStyleAsset, StyleRegistryStore, StyleType } from "../styleRegistry.js";
 import { APIBodySchema, settingsSchema, styleNameSchema } from "../types.js";
 import { createZip, readZip, type ZipEntry } from "./zip.js";
 
@@ -31,6 +32,107 @@ const formatZodError = (error: z.ZodError) =>
 const readRawJson = (filePath: string): unknown =>
   JSON.parse(fs.readFileSync(filePath, "utf8").replace(/^﻿/, ""));
 
+type DecodedAssetOverride = {
+  area: AssetArea;
+  file: string;
+  asset: LoadedStyleAsset;
+};
+
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const decodePngAsset = (style: LoadedStyle, area: AssetArea, file: string, data: unknown): LoadedStyleAsset => {
+  if (typeof data !== "string") {
+    throw new Error(`Asset override ${area}/${file} must be a base64 PNG string`);
+  }
+
+  const buffer = Buffer.from(data.replace(/^data:image\/png;base64,/, ""), "base64");
+  if (buffer.length < 8 || buffer[0] !== 0x89 || buffer[1] !== 0x50) {
+    throw new Error(`Asset override ${area}/${file} is not a valid PNG`);
+  }
+
+  const dimensions = sizeOf(buffer);
+  if (!dimensions.width || !dimensions.height) {
+    throw new Error(`Asset override ${area}/${file} has unreadable dimensions`);
+  }
+
+  return {
+    fileName: file,
+    path: path.join(style.directory, area, file),
+    buffer,
+    dimensions: { width: dimensions.width, height: dimensions.height },
+  };
+};
+
+const decodeAssetOverrides = (style: LoadedStyle, input: unknown): DecodedAssetOverride[] => {
+  if (input == null) return [];
+  if (!isObjectRecord(input)) {
+    throw new Error("Asset overrides must be an object");
+  }
+
+  const overrides: DecodedAssetOverride[] = [];
+  for (const area of assetAreas) {
+    const areaInput = input[area];
+    if (areaInput == null) continue;
+    if (!isObjectRecord(areaInput)) {
+      throw new Error(`Asset overrides for ${area} must be an object`);
+    }
+
+    for (const [file, data] of Object.entries(areaInput)) {
+      if (!/^[A-Za-z0-9_-]+\.png$/.test(file)) {
+        throw new Error(`Asset override file name must be a .png: ${area}/${file}`);
+      }
+      if (!style.assets[area].has(file)) {
+        throw new Error(`Cannot replace unknown asset: ${area}/${file}`);
+      }
+
+      overrides.push({ area, file, asset: decodePngAsset(style, area, file, data) });
+    }
+  }
+
+  return overrides;
+};
+
+const applyAssetOverrides = (style: LoadedStyle, overrides: DecodedAssetOverride[]): LoadedStyle => {
+  if (overrides.length === 0) return style;
+
+  const assets: LoadedStyle["assets"] = {
+    icons: new Map(style.assets.icons),
+    template: new Map(style.assets.template),
+  };
+
+  for (const { area, file, asset } of overrides) {
+    assets[area].set(file, asset);
+  }
+
+  return { ...style, assets };
+};
+
+const writeAssetOverrides = (style: LoadedStyle, overrides: DecodedAssetOverride[]) => {
+  for (const { area, file, asset } of overrides) {
+    fs.writeFileSync(path.join(style.directory, area, file), asset.buffer);
+  }
+};
+
+const updateStyleIdentity = (directory: string, type: StyleType, name: string) => {
+  const manifestPath = path.join(directory, "style.json");
+  const manifest = readRawJson(manifestPath);
+  if (!isObjectRecord(manifest)) {
+    throw new Error("style.json must be a JSON object");
+  }
+  fs.writeFileSync(manifestPath, JSON.stringify({ ...manifest, name, type }, null, 2), "utf8");
+
+  const settingsPath = path.join(directory, "settings.json");
+  try {
+    const settings = readRawJson(settingsPath);
+    if (isObjectRecord(settings)) {
+      fs.writeFileSync(settingsPath, JSON.stringify({ ...settings, styleName: name }, null, 2), "utf8");
+    }
+  } catch {
+    // Leave settings untouched if they cannot be read; registry reload will report any real validation issue.
+  }
+};
+
 const walkDir = (dir: string, base: string, entries: ZipEntry[]) => {
   for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, item.name);
@@ -42,7 +144,7 @@ const walkDir = (dir: string, base: string, entries: ZipEntry[]) => {
 
 const createEditorRouter = (store: StyleRegistryStore): express.Router => {
   const router = express.Router();
-  const jsonLarge = express.json({ limit: "30mb" });
+  const jsonLarge = express.json({ limit: "80mb" });
   const registry = () => store.getStyleRegistry();
 
   // --- Editor page -----------------------------------------------------------
@@ -148,13 +250,20 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
       res.status(400).send("Invalid settings: " + formatZodError(settingsResult.error));
       return;
     }
+    let assetOverrides: DecodedAssetOverride[];
+    try {
+      assetOverrides = decodeAssetOverrides(basePack, req.body?.assets);
+    } catch (error) {
+      res.status(400).send("Invalid assets: " + (error as Error).message);
+      return;
+    }
     const cardResult = APIBodySchema.safeParse({ ...(req.body?.card ?? {}), style: styleName });
     if (!cardResult.success) {
       res.status(400).send("Invalid card: " + formatZodError(cardResult.error));
       return;
     }
 
-    const previewPack: LoadedStyle = { ...basePack, settings: settingsResult.data };
+    const previewPack = applyAssetOverrides({ ...basePack, settings: settingsResult.data }, assetOverrides);
     const generate = type === "rush" ? rushCardGenerate : cardGenerate;
 
     try {
@@ -171,7 +280,7 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
     }
   });
 
-  // --- Save settings ---------------------------------------------------------
+  // --- Save settings/assets --------------------------------------------------
   router.post("/api/editor/styles/:type/:name", jsonLarge, (req, res) => {
     const { type, name } = req.params;
     if (!isStyleType(type) || !isValidName(name)) {
@@ -184,7 +293,23 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
       return;
     }
 
-    const incoming = { ...(req.body ?? {}), styleName: name };
+    const body = req.body ?? {};
+    const structuredSave = isObjectRecord(body) && Object.prototype.hasOwnProperty.call(body, "settings");
+    const rawSettings = structuredSave ? body.settings : body;
+    if (!isObjectRecord(rawSettings)) {
+      res.status(400).send("Invalid settings: expected an object");
+      return;
+    }
+
+    let assetOverrides: DecodedAssetOverride[];
+    try {
+      assetOverrides = decodeAssetOverrides(style, structuredSave ? body.assets : undefined);
+    } catch (error) {
+      res.status(400).send("Invalid assets: " + (error as Error).message);
+      return;
+    }
+
+    const incoming = { ...rawSettings, styleName: name };
     const result = settingsSchema.safeParse(incoming);
     if (!result.success) {
       res.status(400).send("Invalid settings: " + formatZodError(result.error));
@@ -192,6 +317,7 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
     }
 
     fs.writeFileSync(path.join(style.directory, "settings.json"), JSON.stringify(incoming, null, 2), "utf8");
+    writeAssetOverrides(style, assetOverrides);
     try {
       store.reload();
     } catch (error) {
@@ -199,6 +325,59 @@ const createEditorRouter = (store: StyleRegistryStore): express.Router => {
       return;
     }
     res.json({ ok: true });
+  });
+
+  // --- Rename a style --------------------------------------------------------
+  router.post("/api/editor/styles/:type/:name/rename", jsonLarge, (req, res) => {
+    const { type, name } = req.params;
+    const newName = req.body?.name;
+    if (!isStyleType(type) || !isValidName(name) || !isValidName(newName)) {
+      res.status(400).send("Invalid style type or name");
+      return;
+    }
+    if (newName === name) {
+      res.json({ type, name });
+      return;
+    }
+
+    const reg = registry();
+    const style = reg.getStyle(type, name);
+    if (!style) {
+      res.status(404).send("Style not found");
+      return;
+    }
+    if (reg.getStyle(type, newName)) {
+      res.status(409).send(`Style "${type}/${newName}" already exists`);
+      return;
+    }
+
+    const sourceDir = style.directory;
+    const targetDir = path.join(path.dirname(sourceDir), newName);
+    const moved = path.resolve(sourceDir) !== path.resolve(targetDir);
+    if (moved && fs.existsSync(targetDir)) {
+      res.status(409).send(`Directory already exists: ${targetDir}`);
+      return;
+    }
+
+    try {
+      if (moved) fs.renameSync(sourceDir, targetDir);
+      updateStyleIdentity(targetDir, type, newName);
+      store.reload();
+    } catch (error) {
+      try {
+        if (moved && fs.existsSync(targetDir) && !fs.existsSync(sourceDir)) {
+          fs.renameSync(targetDir, sourceDir);
+        }
+        updateStyleIdentity(sourceDir, type, name);
+        store.reload();
+      } catch {
+        // Preserve the original error; rollback failures are best handled manually with the reported path.
+      }
+      res.status(500).send("Rename failed: " + (error as Error).message);
+      return;
+    }
+
+    res.json({ type, name: newName });
   });
 
   // --- Create a new style (clone of an existing one) -------------------------

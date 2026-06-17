@@ -1,5 +1,5 @@
 import type { APIBody } from "./types.js";
-import { getTextVariant, isMonsterCard, type CardRenderPlan, type RushRenderLayer } from "./renderPlan.js";
+import { formatMonsterType, getTextVariant, isMonsterCard, type CardRenderPlan, type RushRenderLayer } from "./renderPlan.js";
 
 const getRushSpellTypeParts = (monsterType: string) => {
   const icon = monsterType.toLocaleLowerCase().match(/\/([^/]+)\]$/)?.[1] || "";
@@ -25,7 +25,7 @@ const appendRushTypeLayers = (layers: RushRenderLayer[], monsterType: string) =>
 
 const buildRushCardPlan = (options: APIBody): CardRenderPlan<RushRenderLayer> => {
   const layers: RushRenderLayer[] = [];
-  const monsterType = options.monsterType ?? "";
+  const monsterType = formatMonsterType(options.monsterType);
   const showStats = !options.disableStats;
 
   if (!options.fullArt) {
@@ -57,7 +57,7 @@ const buildRushCardPlan = (options: APIBody): CardRenderPlan<RushRenderLayer> =>
   layers.push(
     { kind: "name", text: options.name, overrush: options.overrushName },
     { kind: "attribute", attribute: options.attribute },
-    { kind: "cardText", text: options.cardText, variant: getTextVariant(monsterType) }
+    { kind: "cardText", text: options.cardText, variant: getTextVariant(options) }
   );
 
   if (isMonsterCard(options) && showStats) {
