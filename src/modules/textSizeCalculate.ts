@@ -12,26 +12,46 @@ const defaultTextOptions = {
   scaleX: 1,
   scaleY: 1,
   letterSpacing: 0,
+  wordSpacing: 0,
 };
 
-const smallCapsPattern = /[a-z\u00e0-\u00ff]/g;
+const DEFAULT_SMALL_CAPS_SCALE = 0.8;
 
 const normalizeOptions = (inputOptions: TextOptions = {}) => ({
   ...defaultTextOptions,
   ...inputOptions,
 });
 
-const calcWidth = (text: string, inputOptions: TextOptions, context: RenderContext): number => {
+const shouldApplySmallCaps = (options: TextOptions) =>
+  Boolean(options.smallCaps || (options.allCaps && options.smallCapsScale !== undefined));
+
+const getSmallCapsScale = (options: TextOptions) => options.smallCapsScale ?? DEFAULT_SMALL_CAPS_SCALE;
+
+const isSmallCapsCharacter = (value: string) => /^[a-z\u00e0-\u00ff]$/.test(value);
+
+const countWordSpacingSlots = (text: string) => text.split(" ").length - 1;
+
+const calcWidthWithLetterSpacing = (
+  text: string,
+  inputOptions: TextOptions,
+  context: RenderContext,
+  letterSpacingSlots = text.length
+): number => {
   const options = normalizeOptions(inputOptions);
   const fontInstance = requireFont(context, options.fontFamily);
   const glyph = fontInstance.layout(text);
 
   return (
-    ((glyph.advanceWidth / fontInstance.unitsPerEm) * options.size + text.length * options.letterSpacing) *
+    ((glyph.advanceWidth / fontInstance.unitsPerEm) * options.size +
+      letterSpacingSlots * options.letterSpacing +
+      countWordSpacingSlots(text) * options.wordSpacing) *
     1.005 *
     options.scaleX
   );
 };
+
+const calcWidth = (text: string, inputOptions: TextOptions, context: RenderContext): number =>
+  calcWidthWithLetterSpacing(text, inputOptions, context);
 
 const hasBracketStyles = (textOptions: TextOptions) =>
   Boolean(textOptions.brackets?.fontFamily || textOptions.brackets?.size !== undefined);
@@ -51,15 +71,32 @@ const getTxtWidthWithoutBracketStyles = (
   textOptions: TextOptions,
   context: RenderContext
 ): number => {
-  if (textOptions.smallCaps) {
-    const smallCapsSize = (textOptions.size ?? defaultTextOptions.size) * 0.8;
-    const smallCaps = text.match(smallCapsPattern)?.join("")?.toUpperCase() || "";
-    const nonSmallCaps = text.replace(smallCapsPattern, "") || "";
+  if (shouldApplySmallCaps(textOptions)) {
+    const smallCapsSize = (textOptions.size ?? defaultTextOptions.size) * getSmallCapsScale(textOptions);
+    const runs: { text: string; smallCaps: boolean }[] = [];
 
-    return (
-      calcWidth(smallCaps, { ...textOptions, size: smallCapsSize }, context) +
-      calcWidth(nonSmallCaps, textOptions, context)
-    );
+    for (const char of text) {
+      const smallCaps = isSmallCapsCharacter(char);
+      const previousRun = runs[runs.length - 1];
+      if (previousRun?.smallCaps === smallCaps) {
+        previousRun.text += char;
+      } else {
+        runs.push({ text: char, smallCaps });
+      }
+    }
+
+    return runs.reduce((width, run) => {
+      const options = run.smallCaps ? { ...textOptions, size: smallCapsSize } : textOptions;
+      return (
+        width +
+        calcWidthWithLetterSpacing(
+          run.smallCaps ? run.text.toUpperCase() : run.text,
+          options,
+          context,
+          Math.max(0, run.text.length - 1)
+        )
+      );
+    }, 0);
   }
 
   return calcWidth(text, textOptions, context);
@@ -146,7 +183,7 @@ const calculateMaxScale = (
   context: RenderContext
 ): { scaleX: number; scaleY: number } => {
   const options = normalizeOptions(inputOptions);
-  const width = getTxtWidth(text, options, context) + text.length * options.letterSpacing;
+  const width = getTxtWidth(text, options, context);
   if (width * options.scaleX > options.width) return { scaleX: options.width / width, scaleY: options.scaleY };
   return { scaleX: options.scaleX, scaleY: options.scaleY };
 };

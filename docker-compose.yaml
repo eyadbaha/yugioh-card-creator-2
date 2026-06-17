@@ -1,4 +1,3 @@
-version: "1.0"
 services:
   card-dev:
     container_name: card-dev
@@ -14,8 +13,11 @@ services:
       - ./src:/var/task/src
       - ./public:/var/task/public
       - ./styles:/var/task/styles
+      - ./nodemon.json:/var/task/nodemon.json:ro
+      - ./tsconfig.json:/var/task/tsconfig.json:ro
     environment:
       STYLES_DIR: /var/task/styles
+      STYLES_WATCH: "1"
     env_file:
       - .env
   card-prod:

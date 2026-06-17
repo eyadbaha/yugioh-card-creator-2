@@ -29,10 +29,14 @@ const generateOptionsSchema = z.object({
   top: z.number().optional(),
   spacing: z.number().optional(),
   letterSpacing: z.number().optional(),
+  wordSpacing: z.number().optional(),
   align: z.string().optional(),
   background: z.string().optional(),
   allCaps: z.boolean().optional(),
   smallCaps: z.boolean().optional(),
+  smallCapsScale: z.number().positive().optional(),
+  smallCapsStroke: z.number().nonnegative().optional(),
+  thin: z.number().nonnegative().optional(),
   stroke: z.number().optional(),
   outline: z
     .object({

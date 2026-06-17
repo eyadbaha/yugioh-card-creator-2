@@ -1,5 +1,6 @@
 {
   "watch": ["src", "public"],
   "ext": "ts,html,css,js",
+  "legacyWatch": true,
   "exec": "tsx ./src/server.ts"
 }

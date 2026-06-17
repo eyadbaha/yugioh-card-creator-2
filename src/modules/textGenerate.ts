@@ -13,6 +13,8 @@ type TextOverflowPadding = {
   bottom: number;
 };
 
+const DEFAULT_SMALL_CAPS_SCALE = 0.8;
+
 const escape = (value: string | number): string | number => {
   if (typeof value !== "string") return value;
 
@@ -26,13 +28,136 @@ const escape = (value: string | number): string | number => {
   return value.replace(/[&"'<>]/g, (char) => lookup[char as keyof typeof lookup]);
 };
 
-const smallCapsConvert = (inputText: string, options: generateOptions, strokeDelta = 0) =>
-  inputText.replace(/(?<!&[^;]*)[a-z\u00e0-\u00ff]/g, (match) => {
-    const strokeWidth = (options.stroke || 0) + strokeDelta;
-    return `<tspan font-size="${options.size * 0.8}" stroke-width="${strokeWidth}" letter-spacing="${
-      options.letterSpacing || 0
-    }">${match.toUpperCase()}</tspan>`;
-  });
+const shouldApplySmallCaps = (options: generateOptions) =>
+  Boolean(options.smallCaps || (options.allCaps && options.smallCapsScale !== undefined));
+
+const getSmallCapsScale = (options: generateOptions) => options.smallCapsScale ?? DEFAULT_SMALL_CAPS_SCALE;
+
+const getSmallCapsStroke = (options: generateOptions) => options.smallCapsStroke ?? 0;
+
+const getWordSpacing = (options: generateOptions) => options.wordSpacing ?? 0;
+
+const isSmallCapsCharacter = (value: string) => /^[a-z\u00e0-\u00ff]$/.test(value);
+
+const createSmallCapsRun = (text: string, options: generateOptions, strokeDelta: number) => {
+  const strokeWidth = (options.stroke || 0) + getSmallCapsStroke(options) + strokeDelta;
+  return `<tspan font-size="${options.size * getSmallCapsScale(
+    options
+  )}" stroke-width="${strokeWidth}" stroke-linejoin="round" letter-spacing="${
+    options.letterSpacing || 0
+  }">${text.toUpperCase()}</tspan>`;
+};
+
+const styleWordSpacing = (inputText: string, options: generateOptions) => {
+  const wordSpacing = getWordSpacing(options);
+  if (wordSpacing === 0) return inputText;
+
+  let output = "";
+  let pendingDx = 0;
+
+  for (let index = 0; index < inputText.length; index += 1) {
+    const char = inputText[index];
+
+    if (char === "<") {
+      const tagEnd = inputText.indexOf(">", index);
+      if (tagEnd === -1) {
+        output += char;
+        continue;
+      }
+
+      const tag = inputText.slice(index, tagEnd + 1);
+      if (pendingDx !== 0 && /^<tspan(?:\s|>)/.test(tag)) {
+        output += tag.replace(/^<tspan/, `<tspan dx="${pendingDx}"`);
+        pendingDx = 0;
+      } else {
+        output += tag;
+      }
+      index = tagEnd;
+      continue;
+    }
+
+    if (char === "&") {
+      const entityEnd = inputText.indexOf(";", index);
+      if (entityEnd === -1) {
+        output += char;
+        continue;
+      }
+
+      const entity = inputText.slice(index, entityEnd + 1);
+      output += pendingDx !== 0 ? `<tspan dx="${pendingDx}">${entity}</tspan>` : entity;
+      pendingDx = 0;
+      index = entityEnd;
+      continue;
+    }
+
+    if (char === " ") {
+      output += char;
+      pendingDx += wordSpacing;
+      continue;
+    }
+
+    if (pendingDx !== 0) {
+      output += `<tspan dx="${pendingDx}">${char}</tspan>`;
+      pendingDx = 0;
+      continue;
+    }
+
+    output += char;
+  }
+
+  return output;
+};
+
+const smallCapsConvert = (inputText: string, options: generateOptions, strokeDelta = 0) => {
+  let output = "";
+  let run = "";
+  let inEntity = false;
+  let inTag = false;
+
+  const flushRun = () => {
+    if (!run) return;
+    output += createSmallCapsRun(run, options, strokeDelta);
+    run = "";
+  };
+
+  for (const char of inputText) {
+    if (char === "<") {
+      flushRun();
+      inTag = true;
+      output += char;
+      continue;
+    }
+
+    if (inTag) {
+      output += char;
+      if (char === ">") inTag = false;
+      continue;
+    }
+
+    if (char === "&") {
+      flushRun();
+      inEntity = true;
+      output += char;
+      continue;
+    }
+
+    if (inEntity) {
+      output += char;
+      if (char === ";") inEntity = false;
+      continue;
+    }
+
+    if (isSmallCapsCharacter(char)) {
+      run += char;
+    } else {
+      flushRun();
+      output += char;
+    }
+  }
+
+  flushRun();
+  return output;
+};
 
 const bracketGlyphAttributes = (options: generateOptions) => {
   const bracketOptions = options.brackets;
@@ -55,8 +180,9 @@ const styleBracketGlyphs = (text: string, options: generateOptions) => {
 const getMaxPaintStrokeWidth = (options: generateOptions) =>
   Math.max(
     options.stroke || 0,
+    shouldApplySmallCaps(options) ? (options.stroke || 0) + getSmallCapsStroke(options) : 0,
     options.outline ? options.outline.width + (options.stroke || 0) : 0,
-    options.overrush && options.smallCaps ? (options.stroke || 0) + 2 : 0
+    options.overrush && shouldApplySmallCaps(options) ? (options.stroke || 0) + 2 : 0
   );
 
 const getTextOverflowPadding = (options: generateOptions): TextOverflowPadding => {
@@ -68,26 +194,42 @@ const getTextOverflowPadding = (options: generateOptions): TextOverflowPadding =
   };
 };
 
-const createDefs = (options: generateOptions, context: RenderContext, svgWidth: number, svgHeight: number) => {
-  if (!options.overrush) return "";
+const getThinAmount = (options: generateOptions) => {
+  const thin = options.thin ?? 0;
+  return Number.isFinite(thin) ? Math.max(0, Math.min(thin, 1)) : 0;
+};
 
-  const shadowFilter = options.smallCaps
-    ? `<filter id="shadowFilter">
+const createDefs = (options: generateOptions, context: RenderContext, svgWidth: number, svgHeight: number) => {
+  const defs: string[] = [];
+
+  if (options.overrush) {
+    defs.push(`<pattern id="bgimg" x="0" y="0" width="${svgWidth}" height="${svgHeight}" patternUnits="userSpaceOnUse">
+        <image x="0" y="0" width="${svgWidth}" height="${svgHeight}" preserveAspectRatio="xMidYMid slice" href="${context.generalAssets.overRushCoverDataUri}" />
+      </pattern>`);
+
+    if (shouldApplySmallCaps(options)) {
+      defs.push(`<filter id="shadowFilter">
         <feOffset dx="1" dy="2"/>
         <feGaussianBlur stdDeviation="1"/>
         <feMerge>
           <feMergeNode/>
           <feMergeNode in="SourceGraphic"/>
         </feMerge>
-      </filter>`
-    : "";
+      </filter>`);
+    }
+  }
 
-  return `<defs>
-      <pattern id="bgimg" x="0" y="0" width="${svgWidth}" height="${svgHeight}" patternUnits="userSpaceOnUse">
-        <image x="0" y="0" width="${svgWidth}" height="${svgHeight}" preserveAspectRatio="xMidYMid slice" href="${context.generalAssets.overRushCoverDataUri}" />
-      </pattern>
-      ${shadowFilter}
-    </defs>`;
+  const thinAmount = getThinAmount(options);
+  if (thinAmount > 0) {
+    defs.push(`<filter id="thinFilter">
+        <feMorphology in="SourceGraphic" operator="erode" radius="1" result="eroded" />
+        <feComposite in="SourceGraphic" in2="eroded" operator="arithmetic" k1="0" k2="${
+          1 - thinAmount
+        }" k3="${thinAmount}" k4="0" />
+      </filter>`);
+  }
+
+  return defs.length > 0 ? `<defs>${defs.join("\n")}</defs>` : "";
 };
 
 const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, context: RenderContext): Buffer => {
@@ -101,6 +243,7 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
     letterSpacing: 0,
     opacity: 1,
     stroke: 0,
+    wordSpacing: 0,
     offsetX: 0,
   };
   const options = { ...defaultOptions, ...inputOptions };
@@ -120,13 +263,15 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
     : "";
   let textWithStroke = "";
 
-  if (options.smallCaps) {
+  if (shouldApplySmallCaps(options)) {
     textWithStroke = `<text ${position} fill="#43161E" letter-spacing="${options.letterSpacing}" opacity="${
       options.opacity
-    }" font-weight="${options.weight}" stroke-width="${(options.stroke || 0) + 2}" stroke="#43161E" font-family="${
-      options.fontFamily
-    }" font-size="${options.size}px" filter="url(#shadowFilter)">${styleBracketGlyphs(
-      smallCapsConvert(text, options, 2),
+    }" font-weight="${options.weight}" stroke-width="${
+      (options.stroke || 0) + 2
+    }" stroke="#43161E" font-family="${options.fontFamily}" font-size="${
+      options.size
+    }px" filter="url(#shadowFilter)">${styleWordSpacing(
+      styleBracketGlyphs(smallCapsConvert(text, options, 2), options),
       options
     )}</text>`;
     text = smallCapsConvert(text, options);
@@ -136,15 +281,18 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
     ? `${background}
        <text ${position} fill="${options.outline.color}" letter-spacing="${options.letterSpacing}" opacity="${
         options.opacity
-      }" font-weight="${options.weight}" stroke-width="${options.outline.width + (options.stroke || 0)}" stroke="${
-        options.outline.color
-      }" font-family="${options.fontFamily}" font-size="${options.size}px">${styleBracketGlyphs(
-        text,
+      }" font-weight="${options.weight}" stroke-width="${
+        options.outline.width + (options.stroke || 0)
+      }" stroke="${options.outline.color}" font-family="${options.fontFamily}" font-size="${
+        options.size
+      }px">${styleWordSpacing(
+        styleBracketGlyphs(text, options),
         options
       )}</text>`
     : "";
 
-  const visibleText = styleBracketGlyphs(text, options);
+  const visibleText = styleWordSpacing(styleBracketGlyphs(text, options), options);
+  const thinFilter = getThinAmount(options) > 0 ? ` filter="url(#thinFilter)"` : "";
   const svgString = `
     <svg width="${svgWidth}" height="${svgHeight}">
       ${createDefs(options, context, svgWidth, svgHeight)}
@@ -156,7 +304,7 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
     options.letterSpacing
   }" opacity="${options.opacity}" font-weight="${options.weight}" stroke-width="${options.stroke}" stroke="${
     options.color
-  }" font-family="${options.fontFamily}" font-size="${options.size}px">${visibleText}</text>
+  }" font-family="${options.fontFamily}" font-size="${options.size}px"${thinFilter}>${visibleText}</text>
         </g>
       </g>
     </svg>`;
@@ -166,7 +314,7 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
 
 const normalizeText = (text: string, inputOptions: generateOptions) => {
   const normalized = text.replace(/([^ ])(\/)([^ ])/g, "$1 / $3").replace(/^(\[[^\]]+\])([^\s])/gm, "$1 $2");
-  return inputOptions.allCaps ? normalized.toUpperCase() : normalized;
+  return inputOptions.allCaps && !shouldApplySmallCaps(inputOptions) ? normalized.toUpperCase() : normalized;
 };
 
 const getContainerOffset = (align: string | undefined, containerWidth: number, contentWidth: number) => {
