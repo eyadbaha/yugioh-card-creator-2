@@ -34,6 +34,24 @@ const smallCapsConvert = (inputText: string, options: generateOptions, strokeDel
     }">${match.toUpperCase()}</tspan>`;
   });
 
+const bracketGlyphAttributes = (options: generateOptions) => {
+  const bracketOptions = options.brackets;
+  if (!bracketOptions) return "";
+
+  const attributes: string[] = [];
+  if (bracketOptions.fontFamily) attributes.push(`font-family="${escape(bracketOptions.fontFamily)}"`);
+  if (bracketOptions.size !== undefined) attributes.push(`font-size="${bracketOptions.size}px"`);
+
+  return attributes.length > 0 ? ` ${attributes.join(" ")}` : "";
+};
+
+const styleBracketGlyphs = (text: string, options: generateOptions) => {
+  const attributes = bracketGlyphAttributes(options);
+  if (!attributes) return text;
+
+  return text.replace(/[\[\]]/g, (bracket) => `<tspan${attributes}>${bracket}</tspan>`);
+};
+
 const getMaxPaintStrokeWidth = (options: generateOptions) =>
   Math.max(
     options.stroke || 0,
@@ -107,7 +125,10 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
       options.opacity
     }" font-weight="${options.weight}" stroke-width="${(options.stroke || 0) + 2}" stroke="#43161E" font-family="${
       options.fontFamily
-    }" font-size="${options.size}px" filter="url(#shadowFilter)">${smallCapsConvert(text, options, 2)}</text>`;
+    }" font-size="${options.size}px" filter="url(#shadowFilter)">${styleBracketGlyphs(
+      smallCapsConvert(text, options, 2),
+      options
+    )}</text>`;
     text = smallCapsConvert(text, options);
   }
 
@@ -117,9 +138,13 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
         options.opacity
       }" font-weight="${options.weight}" stroke-width="${options.outline.width + (options.stroke || 0)}" stroke="${
         options.outline.color
-      }" font-family="${options.fontFamily}" font-size="${options.size}px">${text}</text>`
+      }" font-family="${options.fontFamily}" font-size="${options.size}px">${styleBracketGlyphs(
+        text,
+        options
+      )}</text>`
     : "";
 
+  const visibleText = styleBracketGlyphs(text, options);
   const svgString = `
     <svg width="${svgWidth}" height="${svgHeight}">
       ${createDefs(options, context, svgWidth, svgHeight)}
@@ -131,7 +156,7 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
     options.letterSpacing
   }" opacity="${options.opacity}" font-weight="${options.weight}" stroke-width="${options.stroke}" stroke="${
     options.color
-  }" font-family="${options.fontFamily}" font-size="${options.size}px">${text}</text>
+  }" font-family="${options.fontFamily}" font-size="${options.size}px">${visibleText}</text>
         </g>
       </g>
     </svg>`;

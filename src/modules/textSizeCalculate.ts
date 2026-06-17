@@ -33,8 +33,24 @@ const calcWidth = (text: string, inputOptions: TextOptions, context: RenderConte
   );
 };
 
-const getTxtWidth = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): number => {
-  const textOptions = inputOptions ?? {};
+const hasBracketStyles = (textOptions: TextOptions) =>
+  Boolean(textOptions.brackets?.fontFamily || textOptions.brackets?.size !== undefined);
+
+const bracketTextOptions = (textOptions: TextOptions): TextOptions => {
+  const bracketOptions = textOptions.brackets;
+  const options: TextOptions = { ...textOptions, brackets: undefined };
+
+  if (bracketOptions?.fontFamily !== undefined) options.fontFamily = bracketOptions.fontFamily;
+  if (bracketOptions?.size !== undefined) options.size = bracketOptions.size;
+
+  return options;
+};
+
+const getTxtWidthWithoutBracketStyles = (
+  text: string,
+  textOptions: TextOptions,
+  context: RenderContext
+): number => {
   if (textOptions.smallCaps) {
     const smallCapsSize = (textOptions.size ?? defaultTextOptions.size) * 0.8;
     const smallCaps = text.match(smallCapsPattern)?.join("")?.toUpperCase() || "";
@@ -47,6 +63,29 @@ const getTxtWidth = (text: string, inputOptions: TextOptions | undefined, contex
   }
 
   return calcWidth(text, textOptions, context);
+};
+
+const getTxtWidth = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): number => {
+  const textOptions = inputOptions ?? {};
+
+  if (hasBracketStyles(textOptions) && /[\[\]]/.test(text)) {
+    let width = 0;
+    let textRun = "";
+
+    for (const char of text) {
+      if (char === "[" || char === "]") {
+        width += getTxtWidthWithoutBracketStyles(textRun, textOptions, context);
+        width += calcWidth(char, bracketTextOptions(textOptions), context);
+        textRun = "";
+      } else {
+        textRun += char;
+      }
+    }
+
+    return width + getTxtWidthWithoutBracketStyles(textRun, textOptions, context);
+  }
+
+  return getTxtWidthWithoutBracketStyles(text, textOptions, context);
 };
 
 const wrapLines = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): string[] => {

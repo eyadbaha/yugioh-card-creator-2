@@ -9,6 +9,10 @@ const monsterTypeSchema = z.union([
   // TODO: Remove string fallback after clients migrate to string array monsterType values.
   z.string(),
 ]);
+const bracketTextSchema = z.object({
+  size: z.number().optional(),
+  fontFamily: z.string().optional(),
+});
 const generateOptionsSchema = z.object({
   width: z.number(),
   height: z.number(),
@@ -37,6 +41,7 @@ const generateOptionsSchema = z.object({
     })
     .optional(),
   overrush: z.boolean().optional(),
+  brackets: bracketTextSchema.optional(),
 });
 const linkArrowsSchema = z.object({
   Top: generateOptionsSchema,
