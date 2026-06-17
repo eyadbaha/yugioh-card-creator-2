@@ -13,6 +13,7 @@ services:
     volumes:
       - ./src:/var/task/src
       - ./public:/var/task/public
+      - ./styles:/var/task/styles
     environment:
       STYLES_DIR: /var/task/styles
     env_file:
@@ -28,3 +29,7 @@ services:
     mem_limit: 2048m
     ports:
       - "5000:8080"
+    volumes:
+      - ./styles:/var/task/styles
+    environment:
+      STYLES_DIR: /var/task/styles

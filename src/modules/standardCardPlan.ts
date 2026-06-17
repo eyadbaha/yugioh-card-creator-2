@@ -43,11 +43,16 @@ const appendMonsterFrameLayers = (layers: StandardRenderLayer[], options: APIBod
 const appendPendulumLayers = (layers: StandardRenderLayer[], options: APIBody) => {
   const scaleText = options.scale?.toString() || "0";
 
+  if (!options.fullArt) {
+    layers.push(
+      { kind: "pendulumArtMask" },
+      { kind: "pendulumArt" },
+      { kind: "templateOverlay", templateName: `pendulum-${options.template}` },
+      { kind: "templateOverlay", templateName: "pendulum" }
+    );
+  }
+
   layers.push(
-    { kind: "pendulumArtMask" },
-    { kind: "pendulumArt" },
-    { kind: "templateOverlay", templateName: `pendulum-${options.template}` },
-    { kind: "templateOverlay", templateName: "pendulum" },
     { kind: "pendulumText", text: options.pendulumText || "" },
     { kind: "scale", text: scaleText, side: "right" },
     { kind: "scale", text: scaleText, side: "left" }
