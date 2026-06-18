@@ -15,6 +15,10 @@ type TextBlockLayout = {
   height: number;
 };
 
+type TextBlockLayoutOptions = {
+  expandLineHeight?: boolean;
+};
+
 const defaultTextOptions = {
   fontFamily: "MatrixBold",
   size: 20,
@@ -315,6 +319,8 @@ const getTxtHeight = (text: string, inputOptions: TextOptions | undefined, conte
 
 const calculateMaxFont = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): number => {
   const options = normalizeOptions(inputOptions);
+  if (getTxtHeight(text, options, context) <= options.height) return options.size;
+
   const floorSize = Math.min(6, options.size);
   let bestSize = floorSize;
 
@@ -338,7 +344,8 @@ const calculateMaxFont = (text: string, inputOptions: TextOptions | undefined, c
 const getFittedTextBlockLayout = (
   text: string,
   inputOptions: TextOptions | undefined,
-  context: RenderContext
+  context: RenderContext,
+  layoutOptions: TextBlockLayoutOptions = {}
 ): TextBlockLayout => {
   const options = normalizeOptions(inputOptions);
   const lines = wrapLines(text, options, context);
@@ -346,7 +353,12 @@ const getFittedTextBlockLayout = (
   let bounds = getTextBlockBounds(lines, options, context, lineHeight);
   const targetHeight = options.height / getRenderedScaleY(options);
 
-  if (inputOptions?.lineHeight === undefined && lines.length > 1 && bounds.bottom - bounds.top > 0) {
+  if (
+    (layoutOptions.expandLineHeight ?? true) &&
+    inputOptions?.lineHeight === undefined &&
+    lines.length > 1 &&
+    bounds.bottom - bounds.top > 0
+  ) {
     let low = 0.1;
     let high = Math.max(lineHeight, targetHeight / options.size + 1);
 

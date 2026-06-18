@@ -359,8 +359,10 @@ const textGenerate = async (
       .toBuffer();
   }
 
-  const options = { ...inputOptions, size: calculateMaxFont(text, inputOptions, context) };
-  const layout = getFittedTextBlockLayout(text, options, context);
+  const fontSize = calculateMaxFont(text, inputOptions, context);
+  const wasResized = fontSize < inputOptions.size;
+  const options = { ...inputOptions, size: fontSize };
+  const layout = getFittedTextBlockLayout(text, options, context, { expandLineHeight: wasResized });
   const textBuffer = layout.lines
     .map((line, index) => `<tspan x="0" dy="${index === 0 ? "0" : `${layout.lineHeight}em`}">${escape(line)}</tspan>`)
     .join("");
