@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import type { RenderContext } from "./renderContext.js";
+import { requireFont, type RenderContext } from "./renderContext.js";
 import { calculateMaxFont, getFittedTextBlockLayout, getTxtWidth } from "./textSizeCalculate.js";
 import type { generateOptions } from "./types.js";
 
@@ -14,7 +14,42 @@ type TextOverflowPadding = {
   bottom: number;
 };
 
-const DEFAULT_SMALL_CAPS_SCALE = 0.8;
+type TextPaint = {
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  filter?: string;
+};
+
+type TextRun = {
+  text: string;
+  measureText: string;
+  fontFamily: string;
+  fontSize: number;
+  letterSpacing: number;
+  wordSpacing: number;
+  scaleX: number;
+  attributes?: Record<string, string | number | boolean>;
+};
+
+const DEFAULT_SMALL_CAPS_SCALE = { scaleX: 0.8, scaleY: 0.8 };
+const BRACKET_SEMANTIC_KEYS = new Set(["size", "fontFamily", "scaleX", "scaleY"]);
+const SVG_ATTRIBUTE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_.:-]*$/;
+const SVG_ATTRIBUTE_ALIASES: Record<string, string> = {
+  baselineShift: "baseline-shift",
+  dominantBaseline: "dominant-baseline",
+  fillOpacity: "fill-opacity",
+  fontFamily: "font-family",
+  fontSize: "font-size",
+  letterSpacing: "letter-spacing",
+  strokeLinecap: "stroke-linecap",
+  strokeLinejoin: "stroke-linejoin",
+  strokeOpacity: "stroke-opacity",
+  strokeWidth: "stroke-width",
+  textLength: "textLength",
+  lengthAdjust: "lengthAdjust",
+  wordSpacing: "word-spacing",
+};
 
 const escape = (value: string | number): string | number => {
   if (typeof value !== "string") return value;
@@ -32,7 +67,14 @@ const escape = (value: string | number): string | number => {
 const shouldApplySmallCaps = (options: generateOptions) =>
   Boolean(options.smallCaps || (options.allCaps && options.smallCapsScale !== undefined));
 
-const getSmallCapsScale = (options: generateOptions) => options.smallCapsScale ?? DEFAULT_SMALL_CAPS_SCALE;
+const getSmallCapsScale = (options: generateOptions) => {
+  const scale = options.smallCapsScale as { scaleX?: number; scaleY?: number } | number | undefined;
+  if (typeof scale === "number") return { scaleX: scale, scaleY: scale };
+  return {
+    scaleX: scale?.scaleX ?? DEFAULT_SMALL_CAPS_SCALE.scaleX,
+    scaleY: scale?.scaleY ?? DEFAULT_SMALL_CAPS_SCALE.scaleY,
+  };
+};
 
 const getSmallCapsStroke = (options: generateOptions) => options.smallCapsStroke ?? 0;
 
@@ -40,13 +82,270 @@ const getWordSpacing = (options: generateOptions) => options.wordSpacing ?? 0;
 
 const isSmallCapsCharacter = (value: string) => /^[a-z\u00e0-\u00ff]$/.test(value);
 
-const createSmallCapsRun = (text: string, options: generateOptions, strokeDelta: number) => {
+const escapeAttributeValue = (value: unknown) => `${escape(String(value))}`;
+
+const getSvgAttributeName = (key: string) => SVG_ATTRIBUTE_ALIASES[key] ?? key;
+
+const isRenderableBracketAttributeValue = (value: unknown) =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+
+const getBracketCustomAttributes = (bracketOptions: NonNullable<generateOptions["brackets"]>) => {
+  const attributes: Record<string, string | number | boolean> = {};
+
+  for (const [key, value] of Object.entries(bracketOptions)) {
+    if (BRACKET_SEMANTIC_KEYS.has(key) || !isRenderableBracketAttributeValue(value)) continue;
+
+    const attributeName = getSvgAttributeName(key);
+    if (SVG_ATTRIBUTE_NAME_PATTERN.test(attributeName)) attributes[attributeName] = value;
+  }
+
+  return attributes;
+};
+
+const getPositiveNumberOption = (value: unknown, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+
+const getBracketScale = (options: generateOptions) => ({
+  scaleX: getPositiveNumberOption(options.brackets?.scaleX, 1),
+  scaleY: getPositiveNumberOption(options.brackets?.scaleY, 1),
+});
+
+const getBracketFontSize = (options: generateOptions) => {
+  const bracketOptions = options.brackets;
+  const baseSize = getPositiveNumberOption(bracketOptions?.size, options.size);
+  return baseSize * getBracketScale(options).scaleY;
+};
+
+const getBracketRunScaleX = (options: generateOptions) => {
+  const scale = getBracketScale(options);
+  return scale.scaleY === 0 ? 1 : scale.scaleX / scale.scaleY;
+};
+
+const decodeXmlEntity = (entity: string) => {
+  const lookup: Record<string, string> = {
+    "&amp;": "&",
+    "&apos;": "'",
+    "&gt;": ">",
+    "&lt;": "<",
+    "&quot;": '"',
+  };
+  return lookup[entity] ?? entity;
+};
+
+const countLetterSpacingSlots = (text: string, wordSpacing: number) => {
+  if (wordSpacing !== 0) {
+    let slots = 0;
+
+    for (let index = 1; index < text.length; index += 1) {
+      if (text[index - 1] !== " " && text[index] !== " ") slots += 1;
+    }
+
+    return slots;
+  }
+
+  return Math.max(0, text.length - 1);
+};
+
+const countWordSpacingSlots = (text: string) => text.split(" ").length - 1;
+
+const getTextWidth = (
+  text: string,
+  fontFamily: string,
+  fontSize: number,
+  letterSpacing: number,
+  wordSpacing: number,
+  context: RenderContext
+): number => {
+  const fontInstance = requireFont(context, fontFamily);
+  const glyph = fontInstance.layout(text);
+  return (
+    (glyph.advanceWidth / fontInstance.unitsPerEm) * fontSize +
+    countLetterSpacingSlots(text, wordSpacing) * letterSpacing +
+    countWordSpacingSlots(text) * wordSpacing
+  );
+};
+
+const isBracketCharacter = (value: string) => value === "[" || value === "]";
+
+const haveSameAttributes = (
+  left: Record<string, string | number | boolean> | undefined,
+  right: Record<string, string | number | boolean> | undefined
+) => {
+  const leftEntries = Object.entries(left ?? {});
+  const rightRecord = right ?? {};
+
+  return (
+    leftEntries.length === Object.keys(rightRecord).length &&
+    leftEntries.every(([key, value]) => rightRecord[key] === value)
+  );
+};
+
+const pushTextRun = (runs: TextRun[], run: TextRun) => {
+  const previous = runs[runs.length - 1];
+  const crossesSpaceBoundary = Boolean(
+    previous && (previous.measureText.endsWith(" ") || run.measureText.startsWith(" "))
+  );
+  if (
+    previous &&
+    !crossesSpaceBoundary &&
+    previous.fontFamily === run.fontFamily &&
+    previous.fontSize === run.fontSize &&
+    previous.letterSpacing === run.letterSpacing &&
+    previous.wordSpacing === run.wordSpacing &&
+    previous.scaleX === run.scaleX &&
+    haveSameAttributes(previous.attributes, run.attributes)
+  ) {
+    previous.text += run.text;
+    previous.measureText += run.measureText;
+  } else {
+    runs.push(run);
+  }
+};
+
+const getSmallCapsTextRuns = (inputText: string, options: generateOptions): TextRun[] => {
+  const scale = getSmallCapsScale(options);
+  const baseLetterSpacing = options.letterSpacing || 0;
+  const baseWordSpacing = getWordSpacing(options);
+  const runs: TextRun[] = [];
+
+  for (let index = 0; index < inputText.length; index += 1) {
+    const char = inputText[index];
+
+    if (char === "&") {
+      const entityEnd = inputText.indexOf(";", index);
+      if (entityEnd !== -1) {
+        const entity = inputText.slice(index, entityEnd + 1);
+        pushTextRun(runs, {
+          text: entity,
+          measureText: decodeXmlEntity(entity),
+          fontFamily: options.fontFamily,
+          fontSize: options.size,
+          letterSpacing: baseLetterSpacing,
+          wordSpacing: baseWordSpacing,
+          scaleX: 1,
+        });
+        index = entityEnd;
+        continue;
+      }
+    }
+
+    if (isSmallCapsCharacter(char)) {
+      const runScaleX = scale.scaleY === 0 ? 1 : scale.scaleX / scale.scaleY;
+      pushTextRun(runs, {
+        text: char.toUpperCase(),
+        measureText: char.toUpperCase(),
+        fontFamily: options.fontFamily,
+        fontSize: options.size * scale.scaleY,
+        letterSpacing: runScaleX === 0 ? baseLetterSpacing : baseLetterSpacing / runScaleX,
+        wordSpacing: 0,
+        scaleX: runScaleX,
+      });
+      continue;
+    }
+
+    const bracketOptions = options.brackets && isBracketCharacter(char) ? options.brackets : undefined;
+    pushTextRun(runs, {
+      text: char,
+      measureText: char,
+      fontFamily: bracketOptions?.fontFamily ?? options.fontFamily,
+      fontSize: bracketOptions ? getBracketFontSize(options) : options.size,
+      letterSpacing: baseLetterSpacing,
+      wordSpacing: baseWordSpacing,
+      scaleX: bracketOptions ? getBracketRunScaleX(options) : 1,
+      attributes: bracketOptions ? getBracketCustomAttributes(bracketOptions) : undefined,
+    });
+  }
+
+  return runs;
+};
+
+const getAlignedTextStartX = (align: string | undefined, textBoxWidth: number, contentWidth: number) => {
+  if (align === "right") return textBoxWidth - contentWidth;
+  if (align === "center") return (textBoxWidth - contentWidth) / 2;
+  return 0;
+};
+
+const shouldUsePositionedSmallCaps = (text: string, options: generateOptions) =>
+  shouldApplySmallCaps(options) && !/<\/?tspan(?:\s|>)/i.test(text);
+
+const getPositionedSmallCapsTextWidth = (inputText: string, options: generateOptions, context: RenderContext) =>
+  getSmallCapsTextRuns(inputText, options).reduce(
+    (width, run) =>
+      width +
+      getTextWidth(run.measureText, run.fontFamily, run.fontSize, run.letterSpacing, run.wordSpacing, context) *
+        run.scaleX,
+    0
+  );
+
+const renderPositionedSmallCapsText = (
+  inputText: string,
+  options: generateOptions,
+  context: RenderContext,
+  textBoxWidth: number,
+  y: number,
+  paint: TextPaint
+) => {
+  const runs = getSmallCapsTextRuns(inputText, options);
+  const widths = runs.map((run) =>
+    getTextWidth(run.measureText, run.fontFamily, run.fontSize, run.letterSpacing, run.wordSpacing, context) *
+    run.scaleX
+  );
+  let x = getAlignedTextStartX(
+    options.align,
+    textBoxWidth,
+    widths.reduce((sum, width) => sum + width, 0)
+  );
+
+  return runs
+    .map((run, index) => {
+      const commonAttributes = createPositionedTextAttributes(run, options, paint);
+      const element =
+        Math.abs(run.scaleX - 1) < 1e-9
+          ? `<text x="${x}" y="${y}" ${commonAttributes}>${run.text}</text>`
+          : `<g transform="translate(${x}, 0) scale(${run.scaleX}, 1)"><text x="0" y="${y}" ${commonAttributes} vector-effect="non-scaling-stroke">${run.text}</text></g>`;
+      x += widths[index];
+      return element;
+    })
+    .join("");
+};
+
+const createPositionedTextAttributes = (run: TextRun, options: generateOptions, paint: TextPaint) => {
+  const customAttributes = run.attributes ?? {};
+  const attributes: string[] = [];
+  const usedAttributeNames = new Set<string>();
+  const pushAttribute = (name: string, value: string | number | boolean | undefined) => {
+    if (value === undefined || usedAttributeNames.has(name)) return;
+    const nextValue = Object.prototype.hasOwnProperty.call(customAttributes, name) ? customAttributes[name] : value;
+    usedAttributeNames.add(name);
+    attributes.push(`${name}="${escapeAttributeValue(nextValue)}"`);
+  };
+
+  pushAttribute("fill", paint.fill);
+  pushAttribute("letter-spacing", run.letterSpacing);
+  pushAttribute("word-spacing", run.wordSpacing);
+  pushAttribute("opacity", options.opacity);
+  pushAttribute("font-weight", options.weight);
+  pushAttribute("stroke-width", paint.strokeWidth);
+  pushAttribute("stroke", paint.stroke);
+  pushAttribute("stroke-linejoin", "round");
+  pushAttribute("font-family", run.fontFamily);
+  pushAttribute("font-size", `${run.fontSize}px`);
+  pushAttribute("filter", paint.filter);
+
+  for (const [name, value] of Object.entries(customAttributes)) {
+    pushAttribute(name, value);
+  }
+
+  return attributes.join(" ");
+};
+
+const createSmallCapsRun = (text: string, options: generateOptions, context: RenderContext, strokeDelta: number) => {
+  const scale = getSmallCapsScale(options);
+  const convertedText = text.toUpperCase();
   const strokeWidth = (options.stroke || 0) + getSmallCapsStroke(options) + strokeDelta;
-  return `<tspan font-size="${options.size * getSmallCapsScale(
-    options
-  )}" stroke-width="${strokeWidth}" stroke-linejoin="round" letter-spacing="${
+  return `<tspan font-size="${options.size * scale.scaleY}" stroke-width="${strokeWidth}" stroke-linejoin="round" letter-spacing="${
     options.letterSpacing || 0
-  }">${text.toUpperCase()}</tspan>`;
+  }">${convertedText}</tspan>`;
 };
 
 const styleWordSpacing = (inputText: string, options: generateOptions) => {
@@ -109,7 +408,7 @@ const styleWordSpacing = (inputText: string, options: generateOptions) => {
   return output;
 };
 
-const smallCapsConvert = (inputText: string, options: generateOptions, strokeDelta = 0) => {
+const smallCapsConvert = (inputText: string, options: generateOptions, context: RenderContext, strokeDelta = 0) => {
   let output = "";
   let run = "";
   let inEntity = false;
@@ -117,7 +416,7 @@ const smallCapsConvert = (inputText: string, options: generateOptions, strokeDel
 
   const flushRun = () => {
     if (!run) return;
-    output += createSmallCapsRun(run, options, strokeDelta);
+    output += createSmallCapsRun(run, options, context, strokeDelta);
     run = "";
   };
 
@@ -160,22 +459,45 @@ const smallCapsConvert = (inputText: string, options: generateOptions, strokeDel
   return output;
 };
 
-const bracketGlyphAttributes = (options: generateOptions) => {
+const bracketGlyphAttributes = (bracket: string, options: generateOptions, context: RenderContext) => {
   const bracketOptions = options.brackets;
   if (!bracketOptions) return "";
 
   const attributes: string[] = [];
-  if (bracketOptions.fontFamily) attributes.push(`font-family="${escape(bracketOptions.fontFamily)}"`);
-  if (bracketOptions.size !== undefined) attributes.push(`font-size="${bracketOptions.size}px"`);
+  const usedAttributeNames = new Set<string>();
+  const pushAttribute = (name: string, value: string | number | boolean) => {
+    if (usedAttributeNames.has(name)) return;
+    usedAttributeNames.add(name);
+    attributes.push(`${name}="${escapeAttributeValue(value)}"`);
+  };
+
+  const fontFamily = bracketOptions.fontFamily ?? options.fontFamily;
+  const fontSize = getBracketFontSize(options);
+  const runScaleX = getBracketRunScaleX(options);
+
+  if (bracketOptions.fontFamily) pushAttribute("font-family", bracketOptions.fontFamily);
+  if (bracketOptions.size !== undefined || bracketOptions.scaleY !== undefined) {
+    pushAttribute("font-size", `${fontSize}px`);
+  }
+  if (Math.abs(runScaleX - 1) > 1e-9) {
+    pushAttribute("textLength", getTextWidth(bracket, fontFamily, fontSize, 0, 0, context) * runScaleX);
+    pushAttribute("lengthAdjust", "spacingAndGlyphs");
+  }
+
+  for (const [attributeName, value] of Object.entries(getBracketCustomAttributes(bracketOptions))) {
+    pushAttribute(attributeName, value);
+  }
 
   return attributes.length > 0 ? ` ${attributes.join(" ")}` : "";
 };
 
-const styleBracketGlyphs = (text: string, options: generateOptions) => {
-  const attributes = bracketGlyphAttributes(options);
-  if (!attributes) return text;
+const styleBracketGlyphs = (text: string, options: generateOptions, context: RenderContext) => {
+  if (!options.brackets) return text;
 
-  return text.replace(/[\[\]]/g, (bracket) => `<tspan${attributes}>${bracket}</tspan>`);
+  return text.replace(/[\[\]]/g, (bracket) => {
+    const attributes = bracketGlyphAttributes(bracket, options, context);
+    return attributes ? `<tspan${attributes}>${bracket}</tspan>` : bracket;
+  });
 };
 
 const getMaxPaintStrokeWidth = (options: generateOptions) =>
@@ -263,37 +585,71 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
   const background = options.background
     ? `<rect width="${baseSvgWidth}" height="${textBoxHeight}" fill="${options.background}" />`
     : "";
+  const thinFilter = getThinAmount(options) > 0 ? "url(#thinFilter)" : undefined;
+  const usesPositionedSmallCaps = shouldUsePositionedSmallCaps(text, options);
   let textWithStroke = "";
+  let outline = "";
+  let visibleTextElement = "";
 
-  if (shouldApplySmallCaps(options)) {
-    textWithStroke = `<text ${position} fill="#43161E" letter-spacing="${options.letterSpacing}" opacity="${
-      options.opacity
-    }" font-weight="${options.weight}" stroke-width="${
-      (options.stroke || 0) + 2
-    }" stroke="#43161E" font-family="${options.fontFamily}" font-size="${
-      options.size
-    }px" filter="url(#shadowFilter)">${styleWordSpacing(
-      styleBracketGlyphs(smallCapsConvert(text, options, 2), options),
-      options
-    )}</text>`;
-    text = smallCapsConvert(text, options);
-  }
-
-  const outline = options.outline
-    ? `<text ${position} fill="${options.outline.color}" letter-spacing="${options.letterSpacing}" opacity="${
+  if (usesPositionedSmallCaps) {
+    if (options.overrush) {
+      textWithStroke = renderPositionedSmallCapsText(text, options, context, textBoxWidth, y, {
+        fill: "#43161E",
+        stroke: "#43161E",
+        strokeWidth: (options.stroke || 0) + 2,
+        filter: "url(#shadowFilter)",
+      });
+    }
+    if (options.outline) {
+      outline = renderPositionedSmallCapsText(text, options, context, textBoxWidth, y, {
+        fill: options.outline.color,
+        stroke: options.outline.color,
+        strokeWidth: options.outline.width + (options.stroke || 0),
+      });
+    }
+    visibleTextElement = renderPositionedSmallCapsText(text, options, context, textBoxWidth, y, {
+      fill: options.overrush ? "url(#bgimg)" : options.color,
+      stroke: options.color,
+      strokeWidth: options.stroke || 0,
+      filter: thinFilter,
+    });
+  } else {
+    if (shouldApplySmallCaps(options)) {
+      textWithStroke = `<text ${position} fill="#43161E" letter-spacing="${options.letterSpacing}" opacity="${
         options.opacity
       }" font-weight="${options.weight}" stroke-width="${
-        options.outline.width + (options.stroke || 0)
-      }" stroke="${options.outline.color}" font-family="${options.fontFamily}" font-size="${
+        (options.stroke || 0) + 2
+      }" stroke="#43161E" font-family="${options.fontFamily}" font-size="${
         options.size
-      }px">${styleWordSpacing(
-        styleBracketGlyphs(text, options),
+      }px" filter="url(#shadowFilter)">${styleWordSpacing(
+        styleBracketGlyphs(smallCapsConvert(text, options, context, 2), options, context),
         options
-      )}</text>`
-    : "";
+      )}</text>`;
+      text = smallCapsConvert(text, options, context);
+    }
 
-  const visibleText = styleWordSpacing(styleBracketGlyphs(text, options), options);
-  const thinFilter = getThinAmount(options) > 0 ? ` filter="url(#thinFilter)"` : "";
+    outline = options.outline
+      ? `<text ${position} fill="${options.outline.color}" letter-spacing="${options.letterSpacing}" opacity="${
+          options.opacity
+        }" font-weight="${options.weight}" stroke-width="${
+          options.outline.width + (options.stroke || 0)
+        }" stroke="${options.outline.color}" font-family="${options.fontFamily}" font-size="${
+          options.size
+        }px">${styleWordSpacing(
+          styleBracketGlyphs(text, options, context),
+          options
+        )}</text>`
+      : "";
+
+    const visibleText = styleWordSpacing(styleBracketGlyphs(text, options, context), options);
+    visibleTextElement = `<text ${position} fill="${options.overrush ? "url(#bgimg)" : options.color}" letter-spacing="${
+      options.letterSpacing
+    }" opacity="${options.opacity}" font-weight="${options.weight}" stroke-width="${options.stroke}" stroke="${
+      options.color
+    }" font-family="${options.fontFamily}" font-size="${options.size}px"${
+      thinFilter ? ` filter="${thinFilter}"` : ""
+    }>${visibleText}</text>`;
+  }
   const svgString = `
     <svg width="${svgWidth}" height="${svgHeight}">
       ${createDefs(options, context, svgWidth, svgHeight)}
@@ -302,11 +658,7 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
         <g transform="scale(${options.scaleX}, ${options.scaleY})">
           ${outline}
           ${options.overrush && textWithStroke ? textWithStroke : ""}
-          <text ${position} fill="${options.overrush ? "url(#bgimg)" : options.color}" letter-spacing="${
-    options.letterSpacing
-  }" opacity="${options.opacity}" font-weight="${options.weight}" stroke-width="${options.stroke}" stroke="${
-    options.color
-  }" font-family="${options.fontFamily}" font-size="${options.size}px"${thinFilter}>${visibleText}</text>
+          ${visibleTextElement}
         </g>
       </g>
     </svg>`;
@@ -335,14 +687,20 @@ const textGenerate = async (
   const scaleY = inputOptions.scaleY || 1;
 
   if (inputOptions.fit === "container") {
-    const rawWidth = Math.ceil(getTxtWidth(text, { ...inputOptions, scaleX: 1 }, context));
+    const escapedText = `${escape(text)}`;
+    const unscaledOptions = { ...inputOptions, scaleX: 1 };
+    const rawWidth = Math.ceil(
+      shouldUsePositionedSmallCaps(escapedText, inputOptions)
+        ? getPositionedSmallCapsTextWidth(escapedText, unscaledOptions, context)
+        : getTxtWidth(text, unscaledOptions, context)
+    );
     const textBoxWidth = rawWidth + (inputOptions.outline?.width || 0);
     const contentWidth = Math.ceil(Math.min(textBoxWidth * scaleX, inputOptions.width));
     const fittedScaleX = textBoxWidth > 0 ? contentWidth / textBoxWidth : scaleX;
 
     return sharp(
       createTextLineBuffer(
-        `${escape(text)}`,
+        escapedText,
         {
           ...inputOptions,
           width: inputOptions.width,

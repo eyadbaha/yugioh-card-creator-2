@@ -108,6 +108,11 @@
   .leaf > label { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
   .leaf .with-color { display: flex; gap: 6px; }
   .leaf .with-color input[type=color] { width: 34px; padding: 2px; }
+  .smallcaps-scale-editor {
+    margin: 5px 0 8px; padding: 6px;
+    border: 1px solid var(--border); border-radius: 7px; background: rgba(255,255,255,.018);
+  }
+  .smallcaps-scale-title { color: var(--muted); font-size: 12px; margin: 0 0 4px; }
   .attr-tools {
     display: grid; gap: 6px; margin: 2px 0 10px; padding: 7px;
     border: 1px dashed var(--border); border-radius: 7px; background: rgba(255,255,255,.025);
@@ -341,6 +346,8 @@ const TEXT_OPTION_ATTRIBUTES = [
 ];
 const NON_REMOVABLE_TEXT_OPTION_ATTRIBUTES = new Set(["width", "height"]);
 const TEXT_OPTION_GROUP_NAMES = new Set(["name", "type", "text", "textSpell", "pendulumText", "stat", "scale", "linkRating", "levelString"]);
+const BRACKET_OPTION_ATTRIBUTES = ["size", "fontFamily", "scaleX", "scaleY"];
+const SVG_ATTRIBUTE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_.:-]*$/;
 
 const $ = (sel, root) => (root || document).querySelector(sel);
 const isValidStyleName = (name) => typeof name === "string" && /^[^<>:"/\\|?*\x00-\x1F]+$/.test(name.trim());
@@ -515,6 +522,7 @@ async function loadStyle(section, name) {
   const data = await (await api("/api/editor/styles/" + encodeURIComponent(section) + "/" + encodeURIComponent(name))).json();
   state.current = { type: data.type, section: data.section, name: data.name };
   state.settings = data.settings || {};
+  normalizeStyleEditorSettings(state.settings);
   state.fonts = data.fonts || [];
   state.assets = data.assets || { icons: [], template: [] };
   resetStagedAssets();
@@ -775,8 +783,28 @@ function setByPath(obj, keys, value) {
   cur[keys[keys.length - 1]] = value;
 }
 
+function getByPath(obj, keys) {
+  let cur = obj;
+  for (const key of keys) {
+    if (!isObjectRecord(cur)) return undefined;
+    cur = cur[key];
+  }
+  return cur;
+}
+
 function isObjectRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeStyleEditorSettings(value) {
+  if (!isObjectRecord(value)) return;
+  for (const key of Object.keys(value)) {
+    if (key === "smallCapsScale" && typeof value[key] === "number") {
+      value[key] = { scaleX: value[key], scaleY: value[key] };
+    } else {
+      normalizeStyleEditorSettings(value[key]);
+    }
+  }
 }
 
 function isTextRenderOptions(value, keys) {
@@ -815,13 +843,13 @@ function defaultTextOptionAttributeValue(key, options) {
     background: DEBUG_TEXTBOX_BACKGROUND,
     allCaps: false,
     smallCaps: false,
-    smallCapsScale: 0.8,
+    smallCapsScale: { scaleX: 0.8, scaleY: 0.8 },
     smallCapsStroke: 0,
     thin: 0,
     stroke: 0,
     outline: { width: 1, color: "black" },
     overrush: false,
-    brackets: { size, fontFamily: font },
+    brackets: { size, fontFamily: font, scaleX: 1, scaleY: 1 },
   };
   return copyValue(defaults[key]);
 }
@@ -897,6 +925,95 @@ function makeTextOptionAttributeTools(options) {
   return wrap;
 }
 
+function defaultBracketOptionAttributeValue(key, keys) {
+  const parent = getByPath(state.settings, keys.slice(0, -1));
+  const font = (isObjectRecord(parent) && parent.fontFamily) || state.fonts[0] || "Arial";
+  const size = isObjectRecord(parent) && Number.isFinite(Number(parent.size)) ? Number(parent.size) : 10;
+  const defaults = {
+    size,
+    fontFamily: font,
+    scaleX: 1,
+    scaleY: 1,
+  };
+  return copyValue(defaults[key]);
+}
+
+function isBracketPropertyName(value) {
+  return typeof value === "string" && SVG_ATTRIBUTE_NAME_PATTERN.test(value);
+}
+
+function makeBracketPropertyTools(options, keys) {
+  const wrap = document.createElement("div");
+  wrap.className = "attr-tools";
+
+  const missing = BRACKET_OPTION_ATTRIBUTES.filter((key) => !(key in options));
+  const addKnownRow = document.createElement("div");
+  addKnownRow.className = "attr-tool-row";
+  const addKnownSelect = makeAttributeSelect(missing, "Add bracket prop");
+  const addKnown = document.createElement("button");
+  addKnown.type = "button";
+  addKnown.textContent = "+";
+  addKnown.title = "Add selected bracket property";
+  addKnown.disabled = missing.length === 0;
+  addKnown.addEventListener("click", () => {
+    if (!addKnownSelect.value) return;
+    options[addKnownSelect.value] = defaultBracketOptionAttributeValue(addKnownSelect.value, keys);
+    rebuildStyleFormKeepingOpen();
+    scheduleStyleRender(true);
+  });
+  addKnownRow.appendChild(addKnownSelect);
+  addKnownRow.appendChild(addKnown);
+  wrap.appendChild(addKnownRow);
+
+  const addCustomRow = document.createElement("div");
+  addCustomRow.className = "attr-tool-row";
+  const customInput = document.createElement("input");
+  customInput.type = "text";
+  customInput.placeholder = "Custom SVG attr";
+  const addCustom = document.createElement("button");
+  addCustom.type = "button";
+  addCustom.textContent = "+";
+  addCustom.title = "Add custom bracket property";
+  addCustom.addEventListener("click", () => {
+    const name = customInput.value.trim();
+    if (!isBracketPropertyName(name) || name in options) {
+      customInput.style.borderColor = "var(--danger)";
+      return;
+    }
+    customInput.style.borderColor = "";
+    options[name] = BRACKET_OPTION_ATTRIBUTES.includes(name)
+      ? defaultBracketOptionAttributeValue(name, keys)
+      : "";
+    rebuildStyleFormKeepingOpen();
+    scheduleStyleRender(true);
+  });
+  customInput.addEventListener("input", () => { customInput.style.borderColor = ""; });
+  addCustomRow.appendChild(customInput);
+  addCustomRow.appendChild(addCustom);
+  wrap.appendChild(addCustomRow);
+
+  const removable = Object.keys(options);
+  const removeRow = document.createElement("div");
+  removeRow.className = "attr-tool-row";
+  const removeSelect = makeAttributeSelect(removable, "Remove bracket prop");
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.textContent = "-";
+  remove.title = "Remove selected bracket property";
+  remove.disabled = removable.length === 0;
+  remove.addEventListener("click", () => {
+    if (!removeSelect.value) return;
+    delete options[removeSelect.value];
+    rebuildStyleFormKeepingOpen();
+    scheduleStyleRender(true);
+  });
+  removeRow.appendChild(removeSelect);
+  removeRow.appendChild(remove);
+  wrap.appendChild(removeRow);
+
+  return wrap;
+}
+
 function buildStyleForm(openGroups) {
   const p = $("#panel-style");
   p.innerHTML = "";
@@ -928,7 +1045,97 @@ function isFontFamilyField(key) {
   return key.toLowerCase().startsWith("fontfamily");
 }
 
+function isSmallCapsScaleNode(key, value) {
+  return key === "smallCapsScale"
+    && isObjectRecord(value)
+    && typeof value.scaleX === "number"
+    && typeof value.scaleY === "number";
+}
+
+function renderSmallCapsScaleEditor(value, keys) {
+  const wrap = document.createElement("div");
+  wrap.className = "smallcaps-scale-editor";
+  const title = document.createElement("div");
+  title.className = "smallcaps-scale-title";
+  title.textContent = "smallCapsScale";
+  title.title = keys.join(".");
+  wrap.appendChild(title);
+
+  let scaleInput;
+  let scaleXInput;
+  let scaleYInput;
+  const formatScale = () => value.scaleX === value.scaleY ? String(value.scaleX) : "--";
+  const parsePositiveNumber = (input) => {
+    const n = parseFloat(input.value);
+    const valid = Number.isFinite(n) && n > 0;
+    input.style.borderColor = valid ? "" : "var(--danger)";
+    return valid ? n : null;
+  };
+  const refreshScaleInput = () => {
+    scaleInput.value = formatScale();
+    scaleInput.style.borderColor = "";
+  };
+  const makeRow = (labelText, titleText, input) => {
+    const row = document.createElement("div");
+    row.className = "leaf";
+    const label = document.createElement("label");
+    label.textContent = labelText;
+    label.title = titleText;
+    row.appendChild(label);
+    row.appendChild(input);
+    return row;
+  };
+  const makeAxisInput = (axis) => {
+    const input = document.createElement("input");
+    input.type = "number";
+    input.step = "any";
+    input.min = "0";
+    input.value = value[axis];
+    input.addEventListener("input", () => {
+      const n = parsePositiveNumber(input);
+      if (n === null) return;
+      value[axis] = n;
+      refreshScaleInput();
+      setByPath(state.settings, keys, value);
+      scheduleStyleRender();
+    });
+    return input;
+  };
+
+  scaleInput = document.createElement("input");
+  scaleInput.type = "text";
+  scaleInput.value = formatScale();
+  scaleInput.addEventListener("focus", () => {
+    if (scaleInput.value === "--") scaleInput.select();
+  });
+  scaleInput.addEventListener("input", () => {
+    if (scaleInput.value.trim() === "--") {
+      scaleInput.style.borderColor = "";
+      return;
+    }
+    const n = parsePositiveNumber(scaleInput);
+    if (n === null) return;
+    value.scaleX = n;
+    value.scaleY = n;
+    scaleXInput.value = n;
+    scaleYInput.value = n;
+    setByPath(state.settings, keys, value);
+    scheduleStyleRender();
+  });
+
+  scaleXInput = makeAxisInput("scaleX");
+  scaleYInput = makeAxisInput("scaleY");
+
+  wrap.appendChild(makeRow("scale", keys.concat("scale").join("."), scaleInput));
+  wrap.appendChild(makeRow("scaleX", keys.concat("scaleX").join("."), scaleXInput));
+  wrap.appendChild(makeRow("scaleY", keys.concat("scaleY").join("."), scaleYInput));
+  return wrap;
+}
+
 function renderNode(key, value, keys, openGroups) {
+  if (isSmallCapsScaleNode(key, value)) {
+    return renderSmallCapsScaleEditor(value, keys);
+  }
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
     const details = document.createElement("details");
     details.className = "grp";
@@ -942,6 +1149,9 @@ function renderNode(key, value, keys, openGroups) {
     body.className = "grp-body";
     if (isTextRenderOptions(value, keys)) {
       body.appendChild(makeTextOptionAttributeTools(value));
+    }
+    if (key === "brackets") {
+      body.appendChild(makeBracketPropertyTools(value, keys));
     }
     for (const childKey of Object.keys(value)) {
       body.appendChild(renderNode(childKey, value[childKey], keys.concat(childKey), openGroups));

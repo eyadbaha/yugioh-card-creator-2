@@ -31,7 +31,7 @@ const defaultTextOptions = {
   wordSpacing: 0,
 };
 
-const DEFAULT_SMALL_CAPS_SCALE = 0.8;
+const DEFAULT_SMALL_CAPS_SCALE = { scaleX: 0.8, scaleY: 0.8 };
 const FONT_FIT_PRECISION = 0.1;
 
 const normalizeOptions = (inputOptions: TextOptions = {}) => ({
@@ -42,7 +42,22 @@ const normalizeOptions = (inputOptions: TextOptions = {}) => ({
 const shouldApplySmallCaps = (options: TextOptions) =>
   Boolean(options.smallCaps || (options.allCaps && options.smallCapsScale !== undefined));
 
-const getSmallCapsScale = (options: TextOptions) => options.smallCapsScale ?? DEFAULT_SMALL_CAPS_SCALE;
+const getSmallCapsScale = (options: TextOptions) => {
+  const scale = options.smallCapsScale as { scaleX?: number; scaleY?: number } | number | undefined;
+  if (typeof scale === "number") return { scaleX: scale, scaleY: scale };
+  return {
+    scaleX: scale?.scaleX ?? DEFAULT_SMALL_CAPS_SCALE.scaleX,
+    scaleY: scale?.scaleY ?? DEFAULT_SMALL_CAPS_SCALE.scaleY,
+  };
+};
+
+const getPositiveNumberOption = (value: unknown, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+
+const getBracketScale = (options: TextOptions) => ({
+  scaleX: getPositiveNumberOption(options.brackets?.scaleX, 1),
+  scaleY: getPositiveNumberOption(options.brackets?.scaleY, 1),
+});
 
 const isSmallCapsCharacter = (value: string) => /^[a-z\u00e0-\u00ff]$/.test(value);
 
@@ -124,14 +139,25 @@ const getLineBoundsForOptions = (text: string, inputOptions: TextOptions, contex
 };
 
 const hasBracketStyles = (textOptions: TextOptions) =>
-  Boolean(textOptions.brackets?.fontFamily || textOptions.brackets?.size !== undefined);
+  Boolean(
+    textOptions.brackets?.fontFamily ||
+      textOptions.brackets?.size !== undefined ||
+      textOptions.brackets?.scaleX !== undefined ||
+      textOptions.brackets?.scaleY !== undefined
+  );
 
 const bracketTextOptions = (textOptions: TextOptions): TextOptions => {
   const bracketOptions = textOptions.brackets;
   const options: TextOptions = { ...textOptions, brackets: undefined };
+  const bracketScale = getBracketScale(textOptions);
+  const bracketScaleX = bracketScale.scaleY === 0 ? 1 : bracketScale.scaleX / bracketScale.scaleY;
 
   if (bracketOptions?.fontFamily !== undefined) options.fontFamily = bracketOptions.fontFamily;
-  if (bracketOptions?.size !== undefined) options.size = bracketOptions.size;
+  options.size = getPositiveNumberOption(
+    bracketOptions?.size,
+    options.size ?? defaultTextOptions.size
+  ) * bracketScale.scaleY;
+  options.scaleX = (textOptions.scaleX ?? defaultTextOptions.scaleX) * bracketScaleX;
 
   return options;
 };
@@ -142,7 +168,8 @@ const getTxtWidthWithoutBracketStyles = (
   context: RenderContext
 ): number => {
   if (shouldApplySmallCaps(textOptions)) {
-    const smallCapsSize = (textOptions.size ?? defaultTextOptions.size) * getSmallCapsScale(textOptions);
+    const smallCapsScale = getSmallCapsScale(textOptions);
+    const smallCapsSize = (textOptions.size ?? defaultTextOptions.size) * smallCapsScale.scaleX;
     const runs: { text: string; smallCaps: boolean }[] = [];
 
     for (const char of text) {
@@ -178,7 +205,8 @@ const getLineBoundsWithoutBracketStyles = (
   context: RenderContext
 ): TextLineBounds => {
   if (shouldApplySmallCaps(textOptions)) {
-    const smallCapsSize = (textOptions.size ?? defaultTextOptions.size) * getSmallCapsScale(textOptions);
+    const smallCapsScale = getSmallCapsScale(textOptions);
+    const smallCapsSize = (textOptions.size ?? defaultTextOptions.size) * smallCapsScale.scaleY;
     const runs: { text: string; smallCaps: boolean }[] = [];
 
     for (const char of text) {

@@ -16,7 +16,16 @@ const monsterTypeSchema = z.union([
 const bracketTextSchema = z.object({
   size: z.number().optional(),
   fontFamily: z.string().optional(),
-});
+  scaleX: z.number().positive().optional(),
+  scaleY: z.number().positive().optional(),
+}).passthrough();
+const smallCapsScaleSchema = z.preprocess(
+  (value) => (typeof value === "number" ? { scaleX: value, scaleY: value } : value),
+  z.object({
+    scaleX: z.number().positive(),
+    scaleY: z.number().positive(),
+  })
+);
 const generateOptionsSchema = z.object({
   width: z.number(),
   height: z.number(),
@@ -38,7 +47,7 @@ const generateOptionsSchema = z.object({
   background: z.string().optional(),
   allCaps: z.boolean().optional(),
   smallCaps: z.boolean().optional(),
-  smallCapsScale: z.number().positive().optional(),
+  smallCapsScale: smallCapsScaleSchema.optional(),
   smallCapsStroke: z.number().nonnegative().optional(),
   thin: z.number().nonnegative().optional(),
   stroke: z.number().optional(),
