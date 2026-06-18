@@ -26,6 +26,23 @@ const smallCapsScaleSchema = z.preprocess(
     scaleY: z.number().positive(),
   })
 );
+const sizeScaleYFitSchema = z
+  .object({
+    maxScaleY: z.number().positive().optional(),
+    targetHeightRatio: z.number().positive().optional(),
+    fullScaleAtSizeReduction: z.number().nonnegative().optional(),
+    trimLineEndings: z.boolean().optional(),
+    lineEndSearchRatio: z.number().nonnegative().optional(),
+    lastLineAlignmentWeight: z.number().nonnegative().optional(),
+    justifyLineEndings: z.boolean().optional(),
+    justifyLastLine: z.boolean().optional(),
+    maxLineWordSpacing: z.number().nonnegative().optional(),
+    minLineFillRatio: z.number().nonnegative().optional(),
+    balanceLineEndings: z.boolean().optional(),
+    balanceLastLineWeight: z.number().nonnegative().optional(),
+    minBalanceLineCount: z.number().int().nonnegative().optional(),
+  })
+  .passthrough();
 const generateOptionsSchema = z.object({
   width: z.number(),
   height: z.number(),
@@ -45,6 +62,12 @@ const generateOptionsSchema = z.object({
   wordSpacing: z.number().optional(),
   align: z.string().optional(),
   background: z.string().optional(),
+  trimLineEndings: z.boolean().optional(),
+  justifyLineEndings: z.boolean().optional(),
+  justifyLastLine: z.boolean().optional(),
+  maxLineWordSpacing: z.number().nonnegative().optional(),
+  minLineFillRatio: z.number().nonnegative().optional(),
+  sizeScaleYFit: sizeScaleYFitSchema.optional(),
   allCaps: z.boolean().optional(),
   smallCaps: z.boolean().optional(),
   smallCapsScale: smallCapsScaleSchema.optional(),

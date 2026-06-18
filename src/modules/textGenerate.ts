@@ -32,6 +32,20 @@ type TextRun = {
   attributes?: Record<string, string | number | boolean>;
 };
 
+type LineEndingSettings = {
+  trimLineEndings: boolean;
+  justifyLineEndings: boolean;
+  justifyLastLine: boolean;
+  maxLineWordSpacing?: number;
+  minLineFillRatio: number;
+};
+
+type TextBlockLine = {
+  text: string;
+  wordSpacing: number;
+  letterSpacing: number;
+};
+
 const DEFAULT_SMALL_CAPS_SCALE = { scaleX: 0.8, scaleY: 0.8 };
 const BRACKET_SEMANTIC_KEYS = new Set(["size", "fontFamily", "scaleX", "scaleY"]);
 const SVG_ATTRIBUTE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_.:-]*$/;
@@ -348,12 +362,24 @@ const createSmallCapsRun = (text: string, options: generateOptions, context: Ren
   }">${convertedText}</tspan>`;
 };
 
-const styleWordSpacing = (inputText: string, options: generateOptions) => {
-  const wordSpacing = getWordSpacing(options);
-  if (wordSpacing === 0) return inputText;
+const styleTextSpacing = (inputText: string, wordSpacing: number, letterSpacing: number) => {
+  if (wordSpacing === 0 && letterSpacing === 0) return inputText;
 
   let output = "";
   let pendingDx = 0;
+  let previousToken = "";
+
+  const appendTextToken = (textToken: string, measureToken: string) => {
+    if (letterSpacing !== 0 && previousToken && previousToken !== " " && measureToken !== " ") {
+      pendingDx += letterSpacing;
+    }
+
+    output += pendingDx !== 0 ? `<tspan dx="${pendingDx}">${textToken}</tspan>` : textToken;
+    pendingDx = 0;
+
+    if (measureToken === " ") pendingDx += wordSpacing;
+    previousToken = measureToken;
+  };
 
   for (let index = 0; index < inputText.length; index += 1) {
     const char = inputText[index];
@@ -379,34 +405,24 @@ const styleWordSpacing = (inputText: string, options: generateOptions) => {
     if (char === "&") {
       const entityEnd = inputText.indexOf(";", index);
       if (entityEnd === -1) {
-        output += char;
+        appendTextToken(char, char);
         continue;
       }
 
       const entity = inputText.slice(index, entityEnd + 1);
-      output += pendingDx !== 0 ? `<tspan dx="${pendingDx}">${entity}</tspan>` : entity;
-      pendingDx = 0;
+      appendTextToken(entity, decodeXmlEntity(entity));
       index = entityEnd;
       continue;
     }
 
-    if (char === " ") {
-      output += char;
-      pendingDx += wordSpacing;
-      continue;
-    }
-
-    if (pendingDx !== 0) {
-      output += `<tspan dx="${pendingDx}">${char}</tspan>`;
-      pendingDx = 0;
-      continue;
-    }
-
-    output += char;
+    appendTextToken(char, char);
   }
 
   return output;
 };
+
+const styleWordSpacing = (inputText: string, options: generateOptions) =>
+  styleTextSpacing(inputText, getWordSpacing(options), 0);
 
 const smallCapsConvert = (inputText: string, options: generateOptions, context: RenderContext, strokeDelta = 0) => {
   let output = "";
@@ -677,6 +693,114 @@ const getContainerOffset = (align: string | undefined, containerWidth: number, c
   return 0;
 };
 
+const getFiniteNumberOption = (value: unknown, fallback?: number) =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+const getLineEndingSettings = (options: generateOptions): LineEndingSettings => {
+  const fitOptions = options.sizeScaleYFit;
+  const minLineFillRatio = getFiniteNumberOption(options.minLineFillRatio ?? fitOptions?.minLineFillRatio, 0) as number;
+
+  return {
+    trimLineEndings: Boolean(options.trimLineEndings ?? fitOptions?.trimLineEndings),
+    justifyLineEndings: Boolean(options.justifyLineEndings ?? fitOptions?.justifyLineEndings),
+    justifyLastLine: Boolean(options.justifyLastLine ?? fitOptions?.justifyLastLine),
+    maxLineWordSpacing: getFiniteNumberOption(options.maxLineWordSpacing ?? fitOptions?.maxLineWordSpacing),
+    minLineFillRatio: Math.max(0, Math.min(minLineFillRatio, 1)),
+  };
+};
+
+const getUnscaledTextBoxWidth = (options: generateOptions) => {
+  const scaleX = Math.abs(options.scaleX || 1);
+  return scaleX > 0 ? options.width / scaleX : options.width;
+};
+
+const countJustifiableWordSpaces = (line: string) => {
+  const trimmed = line.trim();
+  return trimmed ? trimmed.split(" ").length - 1 : 0;
+};
+
+const countJustifiableLetterSpaces = (line: string) => {
+  let slots = 0;
+
+  for (let index = 1; index < line.length; index += 1) {
+    if (line[index - 1] !== " " && line[index] !== " ") slots += 1;
+  }
+
+  return slots;
+};
+
+const getJustifiedLine = (
+  line: string,
+  lineIndex: number,
+  lineCount: number,
+  options: generateOptions,
+  settings: LineEndingSettings,
+  context: RenderContext
+): TextBlockLine => {
+  const baseWordSpacing = getWordSpacing(options);
+  const isLastLine = lineIndex === lineCount - 1;
+  const unjustifiedLine = { text: line, wordSpacing: baseWordSpacing, letterSpacing: 0 };
+  if (!settings.justifyLineEndings || (isLastLine && !settings.justifyLastLine)) return unjustifiedLine;
+
+  const targetWidth = getUnscaledTextBoxWidth(options);
+  const lineWidth = getTxtWidth(line, { ...options, scaleX: 1 }, context);
+  if (targetWidth <= 0 || lineWidth <= 0 || lineWidth / targetWidth < settings.minLineFillRatio) {
+    return unjustifiedLine;
+  }
+
+  const availableSpacing = targetWidth - lineWidth;
+  if (availableSpacing <= 0) return unjustifiedLine;
+
+  const wordSpaceCount = countJustifiableWordSpaces(line);
+  const addedWordSpacing =
+    wordSpaceCount > 0
+      ? Math.min(availableSpacing / wordSpaceCount, settings.maxLineWordSpacing ?? availableSpacing)
+      : 0;
+  const remainingSpacing = availableSpacing - addedWordSpacing * wordSpaceCount;
+  const letterSpaceCount = countJustifiableLetterSpaces(line);
+  const addedLetterSpacing = letterSpaceCount > 0 ? Math.max(0, remainingSpacing) / letterSpaceCount : 0;
+
+  return {
+    text: line,
+    wordSpacing: baseWordSpacing + addedWordSpacing,
+    letterSpacing: addedLetterSpacing,
+  };
+};
+
+const getTextBlockLines = (
+  lines: string[],
+  options: generateOptions,
+  context: RenderContext
+): { lines: TextBlockLine[]; manualWordSpacing: boolean } => {
+  const settings = getLineEndingSettings(options);
+  const normalizedLines = settings.trimLineEndings ? lines.map((line) => line.trimEnd()) : lines;
+  const manualWordSpacing = settings.justifyLineEndings;
+
+  return {
+    manualWordSpacing,
+    lines: normalizedLines.map((line, index) => ({
+      ...(manualWordSpacing
+        ? getJustifiedLine(line, index, normalizedLines.length, options, settings, context)
+        : { text: line, wordSpacing: getWordSpacing(options), letterSpacing: 0 }),
+    })),
+  };
+};
+
+const renderTextBlockLine = (
+  line: TextBlockLine,
+  index: number,
+  lineHeight: number,
+  options: generateOptions,
+  manualWordSpacing: boolean
+) => {
+  const escapedLine = `${escape(line.text)}`;
+  const lineText = manualWordSpacing
+    ? styleTextSpacing(escapedLine, line.wordSpacing, line.letterSpacing)
+    : escapedLine;
+
+  return `<tspan x="0" dy="${index === 0 ? "0" : `${lineHeight}em`}">${lineText}</tspan>`;
+};
+
 const textGenerate = async (
   inputText: string,
   inputOptions: generateOptions,
@@ -721,13 +845,19 @@ const textGenerate = async (
   const wasResized = fontSize < inputOptions.size;
   const options = { ...inputOptions, size: fontSize };
   const layout = getFittedTextBlockLayout(text, options, context, { expandLineHeight: wasResized });
-  const textBuffer = layout.lines
-    .map((line, index) => `<tspan x="0" dy="${index === 0 ? "0" : `${layout.lineHeight}em`}">${escape(line)}</tspan>`)
+  const textBlock = getTextBlockLines(layout.lines, options, context);
+  const textBuffer = textBlock.lines
+    .map((line, index) => renderTextBlockLine(line, index, layout.lineHeight, options, textBlock.manualWordSpacing))
     .join("");
 
   return createTextLineBuffer(
     textBuffer,
-    { ...options, baselineY: layout.baselineY, lineHeight: layout.lineHeight },
+    {
+      ...options,
+      baselineY: layout.baselineY,
+      lineHeight: layout.lineHeight,
+      wordSpacing: textBlock.manualWordSpacing ? 0 : options.wordSpacing,
+    },
     context
   );
 };
