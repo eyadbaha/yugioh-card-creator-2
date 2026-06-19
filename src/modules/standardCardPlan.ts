@@ -75,6 +75,7 @@ const buildStandardCardPlan = (options: APIBody): CardRenderPlan<StandardRenderL
     layers.push(
       { kind: "monsterType", text: monsterType },
       { kind: "monsterText", text: options.cardText, variant: getTextVariant(options) },
+      { kind: "statDivider" },
       { kind: "atk", text: options.atk as string }
     );
 

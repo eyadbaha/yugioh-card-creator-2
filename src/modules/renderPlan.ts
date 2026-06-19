@@ -35,6 +35,7 @@ type StandardRenderLayer =
   | { kind: "monsterType"; text: string }
   | { kind: "atk"; text: string }
   | { kind: "def"; text: string }
+  | { kind: "statDivider" }
   | { kind: "monsterText"; text: string; variant: TextVariant }
   | { kind: "spellText"; text: string }
   | { kind: "art" }

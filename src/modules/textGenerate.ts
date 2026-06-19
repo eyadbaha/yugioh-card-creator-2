@@ -683,7 +683,9 @@ const createTextLineBuffer = (text: string, inputOptions: TextLineOptions, conte
 };
 
 const normalizeText = (text: string, inputOptions: generateOptions) => {
-  const normalized = text.replace(/([^ ])(\/)([^ ])/g, "$1 / $3").replace(/^(\[[^\]]+\])([^\s])/gm, "$1 $2");
+  const slashNormalized =
+    inputOptions.normalizeSlashSpacing === false ? text : text.replace(/([^ ])(\/)([^ ])/g, "$1 / $3");
+  const normalized = slashNormalized.replace(/^(\[[^\]]+\])([^\s])/gm, "$1 $2");
   return inputOptions.allCaps && !shouldApplySmallCaps(inputOptions) ? normalized.toUpperCase() : normalized;
 };
 
@@ -810,7 +812,7 @@ const textGenerate = async (
   const scaleX = inputOptions.scaleX || 1;
   const scaleY = inputOptions.scaleY || 1;
 
-  if (inputOptions.fit === "container") {
+  if (inputOptions.fit === "container" || inputOptions.fit === "shrink") {
     const escapedText = `${escape(text)}`;
     const unscaledOptions = { ...inputOptions, scaleX: 1 };
     const rawWidth = Math.ceil(
@@ -819,8 +821,9 @@ const textGenerate = async (
         : getTxtWidth(text, unscaledOptions, context)
     );
     const textBoxWidth = rawWidth + (inputOptions.outline?.width || 0);
-    const contentWidth = Math.ceil(Math.min(textBoxWidth * scaleX, inputOptions.width));
-    const fittedScaleX = textBoxWidth > 0 ? contentWidth / textBoxWidth : scaleX;
+    const maxScaleX = inputOptions.fit === "shrink" ? Math.min(scaleX, 1) : scaleX;
+    const contentWidth = Math.ceil(Math.min(textBoxWidth * maxScaleX, inputOptions.width));
+    const fittedScaleX = textBoxWidth > 0 ? contentWidth / textBoxWidth : maxScaleX;
 
     return sharp(
       createTextLineBuffer(

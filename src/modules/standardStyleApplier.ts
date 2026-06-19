@@ -14,6 +14,7 @@ import {
   cardBaseInput,
   defOverlay,
   lowerAssetName,
+  statDividerOverlay,
   typeTextOverlay,
   type StyleAssetResolver,
 } from "./styleApplierCommon.js";
@@ -157,7 +158,7 @@ const buildLayerOverlay = (
   style: settings,
   assets: StyleAssetResolver,
   art: LoadedCardArt
-): RenderOverlay => {
+): RenderOverlay | undefined => {
   switch (layer.kind) {
     case "name":
       return {
@@ -199,6 +200,8 @@ const buildLayerOverlay = (
       return atkOverlay(style, layer.text);
     case "def":
       return defOverlay(style, layer.text);
+    case "statDivider":
+      return statDividerOverlay(style);
     case "monsterText":
       return {
         input: textInput(layer.text, getMonsterTextOptions(style, layer.variant)),
@@ -264,6 +267,8 @@ const buildLayerOverlay = (
   }
 };
 
+const isRenderOverlay = (overlay: RenderOverlay | undefined): overlay is RenderOverlay => Boolean(overlay);
+
 const applyStandardStyle = (
   plan: CardRenderPlan<StandardRenderLayer>,
   style: settings,
@@ -271,7 +276,7 @@ const applyStandardStyle = (
   assets: StyleAssetResolver
 ): StyledCardRender => ({
   base: cardBaseInput(plan, assets, art),
-  overlays: plan.layers.map((layer) => buildLayerOverlay(layer, plan, style, assets, art)),
+  overlays: plan.layers.map((layer) => buildLayerOverlay(layer, plan, style, assets, art)).filter(isRenderOverlay),
 });
 
 export { applyStandardStyle, standardStyleAssetRequirements };

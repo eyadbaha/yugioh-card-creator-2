@@ -62,6 +62,7 @@ const generateOptionsSchema = z.object({
   wordSpacing: z.number().optional(),
   align: z.string().optional(),
   background: z.string().optional(),
+  normalizeSlashSpacing: z.boolean().optional(),
   trimLineEndings: z.boolean().optional(),
   justifyLineEndings: z.boolean().optional(),
   justifyLastLine: z.boolean().optional(),
@@ -105,6 +106,20 @@ const spellIconSchema = z.object({
     top: z.number(),
   }),
 });
+const statLabelsSchema = z.object({
+  atk: z.string().default(""),
+  def: z.string().default(""),
+});
+const statDividerSchema = z
+  .object({
+    left: z.number(),
+    top: z.number(),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    color: z.string().default("black"),
+    opacity: z.number().min(0).max(1).optional(),
+  })
+  .passthrough();
 const settingsSchema = z.object({
   styleName: styleNameSchema,
   name: generateOptionsSchema,
@@ -148,6 +163,8 @@ const settingsSchema = z.object({
       top: z.number(),
     }).optional(),
   }),
+  statLabels: statLabelsSchema.optional(),
+  statDivider: statDividerSchema.optional(),
   statSection: generateOptionsSchema.optional(),
   maxSection: generateOptionsSchema.optional(),
   linkRating: generateOptionsSchema.optional(),
