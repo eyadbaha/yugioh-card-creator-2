@@ -42,8 +42,14 @@ type LineEndingSettings = {
 
 type TextBlockLine = {
   text: string;
+  isParagraphEnd: boolean;
   wordSpacing: number;
   letterSpacing: number;
+};
+
+type TextBlockLayoutLine = {
+  text: string;
+  isParagraphEnd: boolean;
 };
 
 const DEFAULT_SMALL_CAPS_SCALE = { scaleX: 0.8, scaleY: 0.8 };
@@ -698,6 +704,9 @@ const getContainerOffset = (align: string | undefined, containerWidth: number, c
 const getFiniteNumberOption = (value: unknown, fallback?: number) =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
+const getPositiveNumberOptionValue = (value: unknown, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+
 const getLineEndingSettings = (options: generateOptions): LineEndingSettings => {
   const fitOptions = options.sizeScaleYFit;
   const minLineFillRatio = getFiniteNumberOption(options.minLineFillRatio ?? fitOptions?.minLineFillRatio, 0) as number;
@@ -733,16 +742,14 @@ const countJustifiableLetterSpaces = (line: string) => {
 
 const getJustifiedLine = (
   line: string,
-  lineIndex: number,
-  lineCount: number,
+  isParagraphEnd: boolean,
   options: generateOptions,
   settings: LineEndingSettings,
   context: RenderContext
 ): TextBlockLine => {
   const baseWordSpacing = getWordSpacing(options);
-  const isLastLine = lineIndex === lineCount - 1;
-  const unjustifiedLine = { text: line, wordSpacing: baseWordSpacing, letterSpacing: 0 };
-  if (!settings.justifyLineEndings || (isLastLine && !settings.justifyLastLine)) return unjustifiedLine;
+  const unjustifiedLine = { text: line, isParagraphEnd, wordSpacing: baseWordSpacing, letterSpacing: 0 };
+  if (!settings.justifyLineEndings || (isParagraphEnd && !settings.justifyLastLine)) return unjustifiedLine;
 
   const targetWidth = getUnscaledTextBoxWidth(options);
   const lineWidth = getTxtWidth(line, { ...options, scaleX: 1 }, context);
@@ -764,28 +771,64 @@ const getJustifiedLine = (
 
   return {
     text: line,
+    isParagraphEnd,
     wordSpacing: baseWordSpacing + addedWordSpacing,
     letterSpacing: addedLetterSpacing,
   };
 };
 
 const getTextBlockLines = (
-  lines: string[],
+  lines: TextBlockLayoutLine[],
   options: generateOptions,
   context: RenderContext
 ): { lines: TextBlockLine[]; manualWordSpacing: boolean } => {
   const settings = getLineEndingSettings(options);
-  const normalizedLines = settings.trimLineEndings ? lines.map((line) => line.trimEnd()) : lines;
+  const normalizedLines = settings.trimLineEndings
+    ? lines.map((line) => ({ ...line, text: line.text.trimEnd() }))
+    : lines;
   const manualWordSpacing = settings.justifyLineEndings;
 
   return {
     manualWordSpacing,
-    lines: normalizedLines.map((line, index) => ({
+    lines: normalizedLines.map((line) => ({
       ...(manualWordSpacing
-        ? getJustifiedLine(line, index, normalizedLines.length, options, settings, context)
-        : { text: line, wordSpacing: getWordSpacing(options), letterSpacing: 0 }),
+        ? getJustifiedLine(line.text, line.isParagraphEnd, options, settings, context)
+        : {
+            text: line.text,
+            isParagraphEnd: line.isParagraphEnd,
+            wordSpacing: getWordSpacing(options),
+            letterSpacing: 0,
+          }),
     })),
   };
+};
+
+const getTextBlockFitScaleY = (
+  inputOptions: generateOptions,
+  fittedOptions: generateOptions,
+  layoutHeight: number,
+  isJustified: boolean
+) => {
+  const fitOptions = fittedOptions.sizeScaleYFit;
+  const baseScaleY = fittedOptions.scaleY || 1;
+  if (fittedOptions.fit !== "size-scale-y" || !isJustified || layoutHeight <= 0) return baseScaleY;
+
+  const targetHeightRatio = getPositiveNumberOptionValue(fitOptions?.targetHeightRatio, 1);
+  const targetHeight = fittedOptions.height * targetHeightRatio;
+  const fittedScaleY = baseScaleY * (targetHeight / layoutHeight);
+  if (fittedScaleY <= baseScaleY) return baseScaleY;
+
+  const maxScaleY = getPositiveNumberOptionValue(fitOptions?.maxScaleY, fittedScaleY);
+  const fullScaleAtSizeReduction = getFiniteNumberOption(fitOptions?.fullScaleAtSizeReduction);
+  if (fullScaleAtSizeReduction === undefined) return Math.min(fittedScaleY, maxScaleY);
+
+  const originalSize = inputOptions.size || fittedOptions.size;
+  const sizeReduction = originalSize > 0 ? Math.max(0, (originalSize - fittedOptions.size) / originalSize) : 0;
+  const scaleAllowance =
+    fullScaleAtSizeReduction > 0 ? Math.min(sizeReduction / fullScaleAtSizeReduction, 1) : 1;
+  const allowedScaleY = baseScaleY + (maxScaleY - baseScaleY) * scaleAllowance;
+
+  return Math.min(fittedScaleY, Math.max(baseScaleY, allowedScaleY));
 };
 
 const renderTextBlockLine = (
@@ -849,6 +892,7 @@ const textGenerate = async (
   const options = { ...inputOptions, size: fontSize };
   const layout = getFittedTextBlockLayout(text, options, context, { expandLineHeight: wasResized });
   const textBlock = getTextBlockLines(layout.lines, options, context);
+  const fittedScaleY = getTextBlockFitScaleY(inputOptions, options, layout.height, textBlock.manualWordSpacing);
   const textBuffer = textBlock.lines
     .map((line, index) => renderTextBlockLine(line, index, layout.lineHeight, options, textBlock.manualWordSpacing))
     .join("");
@@ -857,6 +901,7 @@ const textGenerate = async (
     textBuffer,
     {
       ...options,
+      scaleY: fittedScaleY,
       baselineY: layout.baselineY,
       lineHeight: layout.lineHeight,
       wordSpacing: textBlock.manualWordSpacing ? 0 : options.wordSpacing,

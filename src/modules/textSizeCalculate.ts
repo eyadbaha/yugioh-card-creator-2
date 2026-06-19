@@ -9,10 +9,15 @@ type TextLineBounds = {
 };
 
 type TextBlockLayout = {
-  lines: string[];
+  lines: TextBlockLayoutLine[];
   lineHeight: number;
   baselineY: number;
   height: number;
+};
+
+type TextBlockLayoutLine = {
+  text: string;
+  isParagraphEnd: boolean;
 };
 
 type TextBlockLayoutOptions = {
@@ -280,9 +285,13 @@ const getLineBounds = (text: string, inputOptions: TextOptions | undefined, cont
   return getLineBoundsWithoutBracketStyles(text, textOptions, context);
 };
 
-const wrapLines = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): string[] => {
+const wrapTextBlockLines = (
+  text: string,
+  inputOptions: TextOptions | undefined,
+  context: RenderContext
+): TextBlockLayoutLine[] => {
   const options = normalizeOptions(inputOptions);
-  const wrappedLines: string[] = [];
+  const wrappedLines: TextBlockLayoutLine[] = [];
 
   for (const sourceLine of text.split(/\n/)) {
     let line = "";
@@ -290,23 +299,29 @@ const wrapLines = (text: string, inputOptions: TextOptions | undefined, context:
     for (const word of sourceLine.split(" ")) {
       const nextLine = `${line}${word} `;
       if (line && getTxtWidth(nextLine, options, context) > options.width) {
-        wrappedLines.push(line);
+        wrappedLines.push({ text: line, isParagraphEnd: false });
         line = "";
       }
 
       line += `${word} `;
     }
 
-    wrappedLines.push(line);
+    wrappedLines.push({ text: line, isParagraphEnd: true });
   }
 
   return wrappedLines;
 };
 
+const wrapLines = (text: string, inputOptions: TextOptions | undefined, context: RenderContext): string[] =>
+  wrapTextBlockLines(text, inputOptions, context).map((line) => line.text);
+
+const getTextBlockLineText = (line: string | TextBlockLayoutLine): string =>
+  typeof line === "string" ? line : line.text;
+
 const getRenderedScaleY = (options: TextOptions) => Math.abs(options.scaleY || defaultTextOptions.scaleY);
 
 const getTextBlockBounds = (
-  lines: string[],
+  lines: Array<string | TextBlockLayoutLine>,
   inputOptions: TextOptions | undefined,
   context: RenderContext,
   lineHeightOverride?: number
@@ -317,7 +332,7 @@ const getTextBlockBounds = (
 
   return lines.reduce<TextLineBounds>(
     (bounds, line, index) => {
-      const lineBounds = getLineBounds(line, options, context);
+      const lineBounds = getLineBounds(getTextBlockLineText(line), options, context);
       const baseline = index * lineAdvance;
 
       return {
@@ -336,7 +351,7 @@ const getTextBlockHeight = (
   lineHeightOverride?: number
 ) => {
   const options = normalizeOptions(inputOptions);
-  const lines = wrapLines(text, options, context);
+  const lines = wrapTextBlockLines(text, options, context);
   const bounds = getTextBlockBounds(lines, options, context, lineHeightOverride);
   return (bounds.bottom - bounds.top) * getRenderedScaleY(options);
 };
@@ -376,7 +391,7 @@ const getFittedTextBlockLayout = (
   layoutOptions: TextBlockLayoutOptions = {}
 ): TextBlockLayout => {
   const options = normalizeOptions(inputOptions);
-  const lines = wrapLines(text, options, context);
+  const lines = wrapTextBlockLines(text, options, context);
   let lineHeight = options.lineHeight;
   let bounds = getTextBlockBounds(lines, options, context, lineHeight);
   const targetHeight = options.height / getRenderedScaleY(options);
