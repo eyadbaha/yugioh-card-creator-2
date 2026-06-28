@@ -110,6 +110,16 @@ const statLabelsSchema = z.object({
   atk: z.string().default(""),
   def: z.string().default(""),
 });
+const statLabelSchema = generateOptionsSchema.extend({
+  atk: z.object({
+    left: z.number(),
+    top: z.number(),
+  }),
+  def: z.object({
+    left: z.number(),
+    top: z.number(),
+  }),
+});
 const statDividerSchema = z
   .object({
     left: z.number(),
@@ -164,6 +174,7 @@ const settingsSchema = z.object({
     }).optional(),
   }),
   statLabels: statLabelsSchema.optional(),
+  statLabel: statLabelSchema.optional(),
   statDivider: statDividerSchema.optional(),
   statSection: generateOptionsSchema.optional(),
   maxSection: generateOptionsSchema.optional(),
@@ -197,8 +208,8 @@ const APIBodySchema = z
     cardText: z.string(),
     pendulumText: z.string().optional(),
     scale: z.number().nonnegative().lt(15).optional(),
-    atk: z.string().min(0).max(4).optional(),
-    def: z.string().min(0).max(4).optional(),
+    atk: z.string().min(0).optional(),
+    def: z.string().min(0).optional(),
     linkArrows: z.array(z.enum(linkArrowsEnum)).max(8).optional(),
     icon: z.string().optional(),
     pendulum: z.boolean().default(false),

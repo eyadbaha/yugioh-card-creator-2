@@ -42,6 +42,8 @@ const attributeOverlay = (assets: StyleAssetResolver, style: settings, attribute
 const typeTextOverlay = (style: settings, text: string): RenderOverlay =>
   positionedTextOverlay(text, style.type, { top: style.type.top, left: style.type.left });
 
+const statPosition = (style: settings, kind: "atk" | "def") => (kind === "atk" ? style.stat.atk : style.stat.def);
+
 const atkOverlay = (style: settings, text: string): RenderOverlay =>
   positionedTextOverlay(`${style.statLabels?.atk ?? ""}${text}`, style.stat, {
     top: style.stat.atk.top,
@@ -50,6 +52,31 @@ const atkOverlay = (style: settings, text: string): RenderOverlay =>
 
 const defOverlay = (style: settings, text: string): RenderOverlay =>
   positionedTextOverlay(`${style.statLabels?.def ?? ""}${text}`, style.stat, style.stat.def);
+
+const statLabelOverlay = (style: settings, kind: "atk" | "def"): RenderOverlay | undefined => {
+  const labelText = style.statLabels?.[kind] ?? "";
+  const labelOptions = style.statLabel;
+  if (!labelText || !labelOptions) return undefined;
+
+  return positionedTextOverlay(labelText, labelOptions, labelOptions[kind]);
+};
+
+const statValueOverlay = (style: settings, kind: "atk" | "def", text: string): RenderOverlay =>
+  positionedTextOverlay(text, style.stat, statPosition(style, kind));
+
+const statOverlays = (style: settings, kind: "atk" | "def", text: string): RenderOverlay[] => {
+  if (!style.statLabel) {
+    return [kind === "atk" ? atkOverlay(style, text) : defOverlay(style, text)];
+  }
+
+  const labelOverlay = statLabelOverlay(style, kind);
+  const valueOverlay = statValueOverlay(style, kind, text);
+  return labelOverlay ? [labelOverlay, valueOverlay] : [valueOverlay];
+};
+
+const atkOverlays = (style: settings, text: string): RenderOverlay[] => statOverlays(style, "atk", text);
+
+const defOverlays = (style: settings, text: string): RenderOverlay[] => statOverlays(style, "def", text);
 
 const parseHexColor = (color: string): { r: number; g: number; b: number } | undefined => {
   const normalized = color.trim();
@@ -119,10 +146,12 @@ const cardBaseInput = <TLayer>(
 export {
   artOverlay,
   atkOverlay,
+  atkOverlays,
   attributeOverlay,
   cardBaseInput,
   createStyleAssetResolver,
   defOverlay,
+  defOverlays,
   lowerAssetName,
   positionedTextOverlay,
   statDividerOverlay,

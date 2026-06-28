@@ -9,10 +9,10 @@ import {
 } from "./cardRenderer.js";
 import {
   artOverlay,
-  atkOverlay,
+  atkOverlays,
   attributeOverlay,
   cardBaseInput,
-  defOverlay,
+  defOverlays,
   lowerAssetName,
   statDividerOverlay,
   typeTextOverlay,
@@ -158,7 +158,7 @@ const buildLayerOverlay = (
   style: settings,
   assets: StyleAssetResolver,
   art: LoadedCardArt
-): RenderOverlay | undefined => {
+): RenderOverlay | RenderOverlay[] | undefined => {
   switch (layer.kind) {
     case "name":
       return {
@@ -197,9 +197,9 @@ const buildLayerOverlay = (
     case "monsterType":
       return typeTextOverlay(style, layer.text);
     case "atk":
-      return atkOverlay(style, layer.text);
+      return atkOverlays(style, layer.text);
     case "def":
-      return defOverlay(style, layer.text);
+      return defOverlays(style, layer.text);
     case "statDivider":
       return statDividerOverlay(style);
     case "monsterText":
@@ -267,7 +267,11 @@ const buildLayerOverlay = (
   }
 };
 
-const isRenderOverlay = (overlay: RenderOverlay | undefined): overlay is RenderOverlay => Boolean(overlay);
+const flattenRenderOverlay = (overlays: Array<RenderOverlay | RenderOverlay[] | undefined>): RenderOverlay[] =>
+  overlays.flatMap((overlay) => {
+    if (!overlay) return [];
+    return Array.isArray(overlay) ? overlay : [overlay];
+  });
 
 const applyStandardStyle = (
   plan: CardRenderPlan<StandardRenderLayer>,
@@ -276,7 +280,7 @@ const applyStandardStyle = (
   assets: StyleAssetResolver
 ): StyledCardRender => ({
   base: cardBaseInput(plan, assets, art),
-  overlays: plan.layers.map((layer) => buildLayerOverlay(layer, plan, style, assets, art)).filter(isRenderOverlay),
+  overlays: flattenRenderOverlay(plan.layers.map((layer) => buildLayerOverlay(layer, plan, style, assets, art))),
 });
 
 export { applyStandardStyle, standardStyleAssetRequirements };
