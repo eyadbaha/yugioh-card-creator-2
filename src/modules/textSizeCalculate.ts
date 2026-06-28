@@ -38,6 +38,14 @@ const defaultTextOptions = {
 
 const DEFAULT_SMALL_CAPS_SCALE = { scaleX: 0.8, scaleY: 0.8 };
 const FONT_FIT_PRECISION = 0.1;
+const PREFERRED_FALLBACK_FONT_FAMILIES = ["MergedFont"];
+
+type FontInstance = ReturnType<typeof requireFont>;
+
+type TextFontRun = {
+  text: string;
+  font: FontInstance;
+};
 
 const normalizeOptions = (inputOptions: TextOptions = {}) => ({
   ...defaultTextOptions,
@@ -68,6 +76,47 @@ const isSmallCapsCharacter = (value: string) => /^[a-z\u00e0-\u00ff]$/.test(valu
 
 const countWordSpacingSlots = (text: string) => text.split(" ").length - 1;
 
+const hasGlyphForCharacter = (font: FontInstance, character: string) => {
+  const codePoint = character.codePointAt(0);
+  return codePoint !== undefined && font.hasGlyphForCodePoint(codePoint);
+};
+
+const getFallbackFontForCharacter = (
+  primaryFont: FontInstance,
+  character: string,
+  context: RenderContext
+): FontInstance => {
+  if (hasGlyphForCharacter(primaryFont, character)) return primaryFont;
+
+  for (const fontFamily of PREFERRED_FALLBACK_FONT_FAMILIES) {
+    const fallbackFont = context.fontMetrics[fontFamily];
+    if (fallbackFont && hasGlyphForCharacter(fallbackFont, character)) return fallbackFont;
+  }
+
+  return (
+    Object.values(context.fontMetrics).find((font) => font !== primaryFont && hasGlyphForCharacter(font, character)) ??
+    primaryFont
+  );
+};
+
+const getTextFontRuns = (text: string, options: TextOptions, context: RenderContext): TextFontRun[] => {
+  const primaryFont = requireFont(context, options.fontFamily ?? defaultTextOptions.fontFamily);
+  const runs: TextFontRun[] = [];
+
+  for (const character of text) {
+    const font = getFallbackFontForCharacter(primaryFont, character, context);
+    const previousRun = runs[runs.length - 1];
+
+    if (previousRun?.font === font) {
+      previousRun.text += character;
+    } else {
+      runs.push({ text: character, font });
+    }
+  }
+
+  return runs;
+};
+
 const countLetterSpacingSlots = (text: string, options: TextOptions) => {
   if ((options.wordSpacing ?? defaultTextOptions.wordSpacing) !== 0) {
     let slots = 0;
@@ -89,14 +138,14 @@ const calcWidthWithLetterSpacing = (
   letterSpacingSlots?: number
 ): number => {
   const options = normalizeOptions(inputOptions);
-  const fontInstance = requireFont(context, options.fontFamily);
-  const glyph = fontInstance.layout(text);
+  const advanceWidth = getTextFontRuns(text, options, context).reduce(
+    (width, run) => width + (run.font.layout(run.text).advanceWidth / run.font.unitsPerEm) * options.size,
+    0
+  );
   const spacingSlots = letterSpacingSlots ?? countLetterSpacingSlots(text, options);
 
   return (
-    ((glyph.advanceWidth / fontInstance.unitsPerEm) * options.size +
-      spacingSlots * options.letterSpacing +
-      countWordSpacingSlots(text) * options.wordSpacing) *
+    (advanceWidth + spacingSlots * options.letterSpacing + countWordSpacingSlots(text) * options.wordSpacing) *
     1.005 *
     options.scaleX
   );
@@ -118,6 +167,11 @@ const mergeBounds = (bounds: TextLineBounds[]): TextLineBounds => {
 const getFontFallbackBounds = (options: TextOptions, context: RenderContext): TextLineBounds => {
   const normalized = normalizeOptions(options);
   const fontInstance = requireFont(context, normalized.fontFamily);
+  return getFontFallbackBoundsForFont(fontInstance, normalized);
+};
+
+const getFontFallbackBoundsForFont = (fontInstance: FontInstance, options: TextOptions): TextLineBounds => {
+  const normalized = normalizeOptions(options);
   const scale = normalized.size / fontInstance.unitsPerEm;
 
   return {
@@ -126,21 +180,25 @@ const getFontFallbackBounds = (options: TextOptions, context: RenderContext): Te
   };
 };
 
-const getLineBoundsForOptions = (text: string, inputOptions: TextOptions, context: RenderContext): TextLineBounds => {
-  if (!text) return getFontFallbackBounds(inputOptions, context);
-
-  const options = normalizeOptions(inputOptions);
-  const fontInstance = requireFont(context, options.fontFamily);
-  const glyphRun = fontInstance.layout(text) as { bbox?: { minY: number; maxY: number } };
+const getLineBoundsForRun = (run: TextFontRun, options: TextOptions): TextLineBounds => {
+  const glyphRun = run.font.layout(run.text) as { bbox?: { minY: number; maxY: number } };
   const bbox = glyphRun.bbox;
 
-  if (!bbox) return getFontFallbackBounds(options, context);
+  if (!bbox) return getFontFallbackBoundsForFont(run.font, options);
 
-  const scale = options.size / fontInstance.unitsPerEm;
+  const normalized = normalizeOptions(options);
+  const scale = normalized.size / run.font.unitsPerEm;
   return {
     top: -bbox.maxY * scale,
     bottom: -bbox.minY * scale,
   };
+};
+
+const getLineBoundsForOptions = (text: string, inputOptions: TextOptions, context: RenderContext): TextLineBounds => {
+  if (!text) return getFontFallbackBounds(inputOptions, context);
+
+  const options = normalizeOptions(inputOptions);
+  return mergeBounds(getTextFontRuns(text, options, context).map((run) => getLineBoundsForRun(run, options)));
 };
 
 const hasBracketStyles = (textOptions: TextOptions) =>
