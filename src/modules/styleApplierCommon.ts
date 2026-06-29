@@ -39,8 +39,15 @@ const attributeOverlay = (assets: StyleAssetResolver, style: settings, attribute
   ...style.attribute,
 });
 
-const typeTextOverlay = (style: settings, text: string): RenderOverlay =>
-  positionedTextOverlay(text, style.type, { top: style.type.top, left: style.type.left });
+const typeTextOverlay = (
+  style: settings,
+  text: string,
+  textOptionOverrides: Partial<generateOptions> = {}
+): RenderOverlay =>
+  positionedTextOverlay(text, { ...style.type, ...textOptionOverrides }, {
+    top: style.type.top,
+    left: style.type.left,
+  });
 
 const statPosition = (style: settings, kind: "atk" | "def") => (kind === "atk" ? style.stat.atk : style.stat.def);
 

@@ -29,6 +29,8 @@ type TextRun = {
   letterSpacing: number;
   wordSpacing: number;
   scaleX: number;
+  offsetY?: number;
+  isBracket?: boolean;
   attributes?: Record<string, string | number | boolean>;
 };
 
@@ -53,7 +55,7 @@ type TextBlockLayoutLine = {
 };
 
 const DEFAULT_SMALL_CAPS_SCALE = { scaleX: 0.8, scaleY: 0.8 };
-const BRACKET_SEMANTIC_KEYS = new Set(["size", "fontFamily", "scaleX", "scaleY"]);
+const BRACKET_SEMANTIC_KEYS = new Set(["size", "fontFamily", "scaleX", "scaleY", "verticalAlign", "verticalOffset"]);
 const SVG_ATTRIBUTE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_.:-]*$/;
 const SVG_ATTRIBUTE_ALIASES: Record<string, string> = {
   baselineShift: "baseline-shift",
@@ -185,7 +187,57 @@ const getTextWidth = (
   );
 };
 
+type TextBounds = {
+  top: number;
+  bottom: number;
+};
+
+const getTextBounds = (
+  text: string,
+  fontFamily: string,
+  fontSize: number,
+  context: RenderContext
+): TextBounds => {
+  const fontInstance = requireFont(context, fontFamily);
+  const glyphRun = fontInstance.layout(text) as { bbox?: { minY: number; maxY: number } };
+  const scale = fontSize / fontInstance.unitsPerEm;
+
+  if (glyphRun.bbox) {
+    return {
+      top: -glyphRun.bbox.maxY * scale,
+      bottom: -glyphRun.bbox.minY * scale,
+    };
+  }
+
+  return {
+    top: -fontInstance.ascent * scale,
+    bottom: Math.abs(fontInstance.descent) * scale,
+  };
+};
+
+const getTextRunBounds = (run: TextRun, context: RenderContext): TextBounds =>
+  getTextBounds(run.measureText, run.fontFamily, run.fontSize, context);
+
+const mergeTextBounds = (bounds: TextBounds[]): TextBounds | undefined => {
+  const populated = bounds.filter((bound) => Number.isFinite(bound.top) && Number.isFinite(bound.bottom));
+  if (populated.length === 0) return undefined;
+
+  return {
+    top: Math.min(...populated.map((bound) => bound.top)),
+    bottom: Math.max(...populated.map((bound) => bound.bottom)),
+  };
+};
+
+const getBoundsCenter = (bounds: TextBounds) => (bounds.top + bounds.bottom) / 2;
+
 const isBracketCharacter = (value: string) => value === "[" || value === "]";
+
+const isCenteredBracketVerticalAlign = (value: unknown) => value === "middle" || value === "center";
+
+const getBracketVerticalOffset = (options: generateOptions) =>
+  typeof options.brackets?.verticalOffset === "number" && Number.isFinite(options.brackets.verticalOffset)
+    ? options.brackets.verticalOffset
+    : 0;
 
 const haveSameAttributes = (
   left: Record<string, string | number | boolean> | undefined,
@@ -222,7 +274,46 @@ const pushTextRun = (runs: TextRun[], run: TextRun) => {
   }
 };
 
-const getSmallCapsTextRuns = (inputText: string, options: generateOptions): TextRun[] => {
+const applyBracketVerticalAlignment = (
+  runs: TextRun[],
+  options: generateOptions,
+  context: RenderContext
+): TextRun[] => {
+  if (!options.brackets) return runs;
+
+  const manualOffset = getBracketVerticalOffset(options);
+  const centerBrackets = isCenteredBracketVerticalAlign(options.brackets.verticalAlign);
+  if (!centerBrackets && manualOffset === 0) return runs;
+
+  const targetBounds = centerBrackets
+    ? mergeTextBounds(
+        runs
+          .filter((run) => !run.isBracket && run.measureText.trim())
+          .map((run) => getTextRunBounds(run, context))
+      )
+    : undefined;
+
+  return runs.map((run) => {
+    if (!run.isBracket) return run;
+
+    const centeredOffset = targetBounds
+      ? getBoundsCenter(targetBounds) - getBoundsCenter(getTextRunBounds(run, context))
+      : 0;
+    const offsetY = centeredOffset + manualOffset;
+    if (offsetY === 0) return run;
+
+    return {
+      ...run,
+      offsetY: (run.offsetY ?? 0) + offsetY,
+    };
+  });
+};
+
+const getSmallCapsTextRuns = (
+  inputText: string,
+  options: generateOptions,
+  context?: RenderContext
+): TextRun[] => {
   const scale = getSmallCapsScale(options);
   const baseLetterSpacing = options.letterSpacing || 0;
   const baseWordSpacing = getWordSpacing(options);
@@ -272,11 +363,12 @@ const getSmallCapsTextRuns = (inputText: string, options: generateOptions): Text
       letterSpacing: baseLetterSpacing,
       wordSpacing: baseWordSpacing,
       scaleX: bracketOptions ? getBracketRunScaleX(options) : 1,
+      isBracket: Boolean(bracketOptions),
       attributes: bracketOptions ? getBracketCustomAttributes(bracketOptions) : undefined,
     });
   }
 
-  return runs;
+  return context ? applyBracketVerticalAlignment(runs, options, context) : runs;
 };
 
 const getAlignedTextStartX = (align: string | undefined, textBoxWidth: number, contentWidth: number) => {
@@ -289,7 +381,7 @@ const shouldUsePositionedSmallCaps = (text: string, options: generateOptions) =>
   shouldApplySmallCaps(options) && !/<\/?tspan(?:\s|>)/i.test(text);
 
 const getPositionedSmallCapsTextWidth = (inputText: string, options: generateOptions, context: RenderContext) =>
-  getSmallCapsTextRuns(inputText, options).reduce(
+  getSmallCapsTextRuns(inputText, options, context).reduce(
     (width, run) =>
       width +
       getTextWidth(run.measureText, run.fontFamily, run.fontSize, run.letterSpacing, run.wordSpacing, context) *
@@ -305,7 +397,7 @@ const renderPositionedSmallCapsText = (
   y: number,
   paint: TextPaint
 ) => {
-  const runs = getSmallCapsTextRuns(inputText, options);
+  const runs = getSmallCapsTextRuns(inputText, options, context);
   const widths = runs.map((run) =>
     getTextWidth(run.measureText, run.fontFamily, run.fontSize, run.letterSpacing, run.wordSpacing, context) *
     run.scaleX
@@ -319,10 +411,11 @@ const renderPositionedSmallCapsText = (
   return runs
     .map((run, index) => {
       const commonAttributes = createPositionedTextAttributes(run, options, paint);
+      const runY = y + (run.offsetY ?? 0);
       const element =
         Math.abs(run.scaleX - 1) < 1e-9
-          ? `<text x="${x}" y="${y}" ${commonAttributes}>${run.text}</text>`
-          : `<g transform="translate(${x}, 0) scale(${run.scaleX}, 1)"><text x="0" y="${y}" ${commonAttributes} vector-effect="non-scaling-stroke">${run.text}</text></g>`;
+          ? `<text x="${x}" y="${runY}" ${commonAttributes}>${run.text}</text>`
+          : `<g transform="translate(${x}, 0) scale(${run.scaleX}, 1)"><text x="0" y="${runY}" ${commonAttributes} vector-effect="non-scaling-stroke">${run.text}</text></g>`;
       x += widths[index];
       return element;
     })
@@ -481,6 +574,22 @@ const smallCapsConvert = (inputText: string, options: generateOptions, context: 
   return output;
 };
 
+const getInlineBracketVerticalOffset = (bracket: string, options: generateOptions, context: RenderContext) => {
+  const manualOffset = getBracketVerticalOffset(options);
+  if (!options.brackets || !isCenteredBracketVerticalAlign(options.brackets.verticalAlign)) return manualOffset;
+
+  const bracketOptions = options.brackets;
+  const bracketBounds = getTextBounds(
+    bracket,
+    bracketOptions.fontFamily ?? options.fontFamily,
+    getBracketFontSize(options),
+    context
+  );
+  const baseBounds = getTextBounds("H", options.fontFamily, options.size, context);
+
+  return getBoundsCenter(baseBounds) - getBoundsCenter(bracketBounds) + manualOffset;
+};
+
 const bracketGlyphAttributes = (bracket: string, options: generateOptions, context: RenderContext) => {
   const bracketOptions = options.brackets;
   if (!bracketOptions) return "";
@@ -505,6 +614,8 @@ const bracketGlyphAttributes = (bracket: string, options: generateOptions, conte
     pushAttribute("textLength", getTextWidth(bracket, fontFamily, fontSize, 0, 0, context) * runScaleX);
     pushAttribute("lengthAdjust", "spacingAndGlyphs");
   }
+  const verticalOffset = getInlineBracketVerticalOffset(bracket, options, context);
+  if (verticalOffset !== 0) pushAttribute("baseline-shift", -verticalOffset);
 
   for (const [attributeName, value] of Object.entries(getBracketCustomAttributes(bracketOptions))) {
     pushAttribute(attributeName, value);

@@ -18,6 +18,8 @@ const bracketTextSchema = z.object({
   fontFamily: z.string().optional(),
   scaleX: z.number().positive().optional(),
   scaleY: z.number().positive().optional(),
+  verticalAlign: z.enum(["baseline", "middle", "center"]).optional(),
+  verticalOffset: z.number().optional(),
 }).passthrough();
 const smallCapsScaleSchema = z.preprocess(
   (value) => (typeof value === "number" ? { scaleX: value, scaleY: value } : value),

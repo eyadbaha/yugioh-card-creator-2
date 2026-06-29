@@ -65,13 +65,15 @@ const getRushTextOptions = (style: settings, variant: TextVariant): generateOpti
   };
 };
 
+const getInlineTypeOptions = (style: settings): generateOptions => ({ ...style.type, align: "left" });
+
 const getTypeIconLeft = (style: settings, precedingText: string) =>
-  textWidthOffset(precedingText, style.type, (style.type.left || 0) + style.spellIcon.icon.width / 2);
+  textWidthOffset(precedingText, getInlineTypeOptions(style), (style.type.left || 0) + style.spellIcon.icon.width / 2);
 
 const getTypeTextAfterIconLeft = (style: settings, precedingText: string) =>
   afterMeasuredTextIcon(
     precedingText,
-    style.type,
+    getInlineTypeOptions(style),
     style.type.left || 0,
     style.spellIcon.icon.width,
     style.type.size || 0
@@ -103,8 +105,9 @@ const buildLayerOverlay = (
         ...style.legend,
       };
     case "monsterType":
-    case "typeText":
       return typeTextOverlay(style, layer.text);
+    case "typeText":
+      return typeTextOverlay(style, layer.text, { align: "left" });
     case "statSection":
       return {
         input: assets("icons", "stat.png").buffer,
@@ -144,7 +147,7 @@ const buildLayerOverlay = (
       };
     case "typeTextAfterIcon":
       return {
-        input: textInput(layer.text, style.type),
+        input: textInput(layer.text, getInlineTypeOptions(style)),
         top: style.type.top,
         left: getTypeTextAfterIconLeft(style, layer.precedingText),
       };

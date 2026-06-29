@@ -353,7 +353,9 @@ const TEXT_OPTION_ATTRIBUTES = [
 ];
 const NON_REMOVABLE_TEXT_OPTION_ATTRIBUTES = new Set(["width", "height"]);
 const TEXT_OPTION_GROUP_NAMES = new Set(["name", "type", "text", "textSpell", "pendulumText", "stat", "statLabel", "scale", "linkRating", "levelString"]);
-const BRACKET_OPTION_ATTRIBUTES = ["size", "fontFamily", "scaleX", "scaleY"];
+const BRACKET_OPTION_ATTRIBUTES = ["size", "fontFamily", "scaleX", "scaleY", "verticalAlign", "verticalOffset"];
+const TEXT_ALIGN_VALUES = ["left", "center", "right"];
+const BRACKET_VERTICAL_ALIGN_VALUES = ["baseline", "middle", "center"];
 const SVG_ATTRIBUTE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_.:-]*$/;
 
 const $ = (sel, root) => (root || document).querySelector(sel);
@@ -957,6 +959,8 @@ function defaultBracketOptionAttributeValue(key, keys) {
     fontFamily: font,
     scaleX: 1,
     scaleY: 1,
+    verticalAlign: "middle",
+    verticalOffset: 0,
   };
   return copyValue(defaults[key]);
 }
@@ -1216,7 +1220,17 @@ function renderLeaf(key, value, keys) {
     row.appendChild(ta);
   } else {
     const lower = key.toLowerCase();
-    if (isFontFamilyField(key)) {
+    if (key === "align") {
+      row.appendChild(makeSelect(TEXT_ALIGN_VALUES, value, (nextValue) => {
+        setByPath(state.settings, keys, nextValue);
+        scheduleStyleRender();
+      }));
+    } else if (key === "verticalAlign") {
+      row.appendChild(makeSelect(BRACKET_VERTICAL_ALIGN_VALUES, value, (nextValue) => {
+        setByPath(state.settings, keys, nextValue);
+        scheduleStyleRender();
+      }));
+    } else if (isFontFamilyField(key)) {
       row.appendChild(makeFontSelect(value, (nextValue) => {
         setByPath(state.settings, keys, nextValue);
         scheduleStyleRender();
